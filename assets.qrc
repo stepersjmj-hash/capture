@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="icons/app.svg">assets/app.svg</file>
+        <file alias="fonts/icons.otf">assets/fonts/MaterialIconsOutlined-Regular.otf</file>
+    </qresource>
+</RCC>

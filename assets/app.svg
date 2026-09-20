@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f5468"/>
+      <stop offset="1" stop-color="#0f1d26"/>
+    </linearGradient>
+    <linearGradient id="hl" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="118" fill="url(#bg)"/>
+  <rect x="0" y="0" width="512" height="200" rx="118" fill="url(#hl)"/>
+  <!-- 뷰파인더 브래킷 -->
+  <g fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M96 190 V118 a22 22 0 0 1 22 -22 H190"/>
+    <path d="M322 96 H394 a22 22 0 0 1 22 22 V190"/>
+    <path d="M416 322 V394 a22 22 0 0 1 -22 22 H322"/>
+    <path d="M190 416 H118 a22 22 0 0 1 -22 -22 V322"/>
+  </g>
+  <!-- 셔터(앰버) -->
+  <circle cx="256" cy="256" r="74" fill="#e2b464"/>
+  <circle cx="256" cy="256" r="40" fill="#0f1d26" fill-opacity="0.55"/>
+  <circle cx="236" cy="236" r="12" fill="#ffffff" fill-opacity="0.75"/>
+</svg>

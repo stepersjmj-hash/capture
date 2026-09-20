@@ -1,0 +1,81 @@
+# Mcapture
+
+화면 캡처 + 간단 편집 도구 (Windows · macOS). 트레이(메뉴 막대)에 상주하다가 단축키로
+영역을 잡으면 바로 편집 창이 떠서 **사각형 · 밑줄 · 화살표 · 텍스트 · 채우기** 를 얹고
+클립보드 복사 또는 PNG 저장까지 한 번에 끝낸다. 광고·수집·텔레메트리 없음.
+
+## 설치
+
+- **Windows**: [Releases](https://github.com/stepersjmj-hash/capture/releases) 에서
+  `Mcapture-<버전>-win.zip` 을 받아 아무 폴더에나 풀고 `Mcapture.exe` 실행 (설치 불필요, 설정은
+  같은 폴더 `Mcapture.ini`). 트레이에 아이콘이 생기면 준비 완료.
+  설정 › `Windows 시작 시 자동 실행` 을 켜면 로그인할 때 자동으로 뜬다.
+- **macOS**: `Mcapture-<버전>-mac.dmg` 를 열어 `Mcapture.app` 을 응용 프로그램에 끌어 넣는다.
+  서명 없는 배포본이라 첫 실행은 **앱 우클릭 → 열기**. 첫 캡처 때 macOS 가 **화면 기록** 권한을
+  묻는데, 허용한 뒤 앱을 한 번 다시 실행해야 한다 (시스템 설정 › 개인정보 보호 및 보안 › 화면 기록).
+  Dock 에는 나타나지 않고 메뉴 막대 아이콘으로만 보인다.
+
+## 사용법
+
+### 캡처
+
+| 동작 | Windows | macOS |
+|---|---|---|
+| 영역 캡처 (드래그) | `Ctrl+Shift+Alt+S` | `⌃⇧⌘S` |
+| 마우스가 있는 화면 전체 | `Ctrl+Shift+Alt+F` | `⌃⇧⌘F` |
+| OS 기본 캡처 → 편집 창 자동 열림 | `Win+Shift+S` | `⌃⇧⌘4` (클립보드로 가는 캡처) |
+
+- 영역 선택 화면에서 **드래그해서 놓으면 바로** 편집 창이 뜬다. `Enter`/더블클릭 = 그 화면 전체,
+  `Esc`/우클릭 = 취소. 모니터가 여러 개면 모든 화면에서 고를 수 있다.
+- 캡처 직후 원본이 클립보드에도 들어가므로(설정에서 끌 수 있음) 편집 없이 바로 붙여넣어도 된다.
+- 트레이 아이콘: 클릭 = 메뉴, 더블클릭 = 영역 캡처. 단축키는 설정에서 바꿀 수 있다.
+
+### 편집 창
+
+| 도구 | 키 | 설명 |
+|---|---|---|
+| 선택 | `V` | 클릭으로 선택 → 드래그 이동, 방향키 1px(Shift 10px) 이동, `Delete` 삭제. 선택 상태에서 색·굵기·글자 크기를 바꾸면 그 항목에 적용. 텍스트는 더블클릭으로 수정 |
+| 사각형 | `R` | 드래그로 테두리 상자 |
+| 밑줄 | `L` | 드래그로 선. 수평·수직에 가까우면 자동으로 맞춰지고 `Shift` 를 누르면 자유 각도 |
+| 화살표 | `A` | 드래그, 끝점이 화살 머리 |
+| 텍스트 | `T` | 넣을 위치 클릭 → 입력 → `Enter` (굵은 글꼴 + 어두운 외곽선이라 밝은 배경에서도 읽힘) |
+| 채우기 | `F` | 드래그한 영역을 현재 색으로 덮음 (개인정보 가리기용) |
+
+- 색: 툴바의 색 칩 6개 또는 `색상` 으로 아무 색이나. 굵기·글자 크기는 스핀 상자.
+- `Ctrl+Z` / `Ctrl+Y` 되돌리기·다시 실행, `Esc` 는 입력 중인 텍스트 취소 → 선택 해제 → 창 닫기 순.
+- **내보내기**: `Ctrl+C` 클립보드 복사 · `Ctrl+S` 저장 폴더에 PNG 저장(`Mcapture_날짜_시각.png`) ·
+  `Ctrl+Shift+S` 다른 이름으로(PNG/JPEG) · `폴더` 버튼으로 저장 폴더 열기.
+  기본 저장 폴더는 `사진\Mcapture` (설정에서 변경).
+- 편집한 내용을 복사도 저장도 하지 않고 닫으면 한 번 확인한다.
+
+### 설정 (트레이 메뉴 › 설정…)
+
+단축키 두 개, OS 기본 캡처 자동 열기(클립보드 감시), 캡처 직후 자동 복사, 저장 폴더,
+Windows 시작 시 자동 실행, 시작 시 업데이트 확인.
+
+### 자동 업데이트
+
+앱을 켤 때 제작자 NAS(HTTPS, 읽기만)에서 새 버전을 확인하고, 있으면 트레이 알림이 뜬다 —
+알림을 누르면 받아서 자동으로 교체·재시작한다. 트레이 메뉴 `업데이트 확인` 으로 즉시 확인할 수
+있고 자동 확인은 끌 수 있다. 네트워크 사용은 이것뿐이다.
+
+### 명령줄
+
+```
+Mcapture --region          영역 캡처 시작 (이미 실행 중이면 그 인스턴스가 처리)
+Mcapture --full            전체 화면 캡처
+Mcapture --edit 파일.png    이미지 파일을 편집 창으로 열기 (경로만 줘도 됨)
+Mcapture --settings        설정 열기
+Mcapture --quit            종료
+```
+
+## 빌드
+
+- **Windows** (MSYS2 MINGW64): `pacman -S mingw-w64-x86_64-{gcc,cmake,ninja,qt6-base,qt6-svg}` 후
+  `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`, 실행에 필요한 DLL 은
+  `windeployqt6 build/Mcapture.exe` + `tls/qschannelbackend.dll` (자세한 절차는 CLAUDE.md), 배포는 `make-dist.ps1`.
+- **macOS**: `brew install cmake ninja qt` 후 `./make-dist-mac.sh` → `dist/Mcapture-<버전>-mac.dmg`.
+- main 푸시마다 GitHub Actions 가 양 플랫폼을 빌드하고, `v*` 태그를 푸시하면 win zip · mac dmg · mac zip 을
+  릴리스에 자동 첨부한다.
+
+변경 내역은 [CHANGELOG.md](CHANGELOG.md) 참고.

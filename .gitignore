@@ -1,0 +1,5 @@
+build/
+build-mac*/
+dist/
+*.ini
+.DS_Store

@@ -1,0 +1,172 @@
+# Mcapture 자동 빌드 (Windows MSYS2 MINGW64 + macOS Apple Silicon)
+# - main 푸시: 양 플랫폼 빌드 검증 + 산출물 artifact 업로드
+# - v* 태그 푸시: 각 잡이 빌드 직후 GitHub Release 에 win zip / mac dmg / mac zip 을 직접 첨부
+#   (artifact 를 거치지 않는다 — 계정 Actions 저장 쿼터가 차면 릴리스까지 막혔다)
+#   (NAS 업로드(자동 업데이트 배포)는 로컬 release.ps1 / release-mac.sh 가 담당)
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: write   # 태그 빌드가 릴리스에 산출물을 직접 올린다
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 의존성은 전부 MSYS2 바이너리 패키지 (Qt 만) — 소스 빌드·캐시 불필요
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-qt6-base
+            mingw-w64-x86_64-qt6-svg
+
+      - name: 버전 읽기
+        id: ver
+        run: |
+          V=$(sed -n 's/^project(Mcapture VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "버전: $V"
+
+      - name: 태그와 CMakeLists 버전 일치 확인
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          test "v${{ steps.ver.outputs.version }}" = "$GITHUB_REF_NAME" || {
+            echo "::error::CMakeLists.txt 버전(${{ steps.ver.outputs.version }}) 과 태그($GITHUB_REF_NAME) 불일치"; exit 1; }
+
+      - name: 빌드
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+
+      # CLAUDE.md "실행" 절의 DLL 재배포 절차와 동일 + tls 플러그인
+      - name: 런타임 배포 (Qt DLL, tls 플러그인)
+        run: |
+          windeployqt6 --release --no-translations build/Mcapture.exe
+          # cp -n 은 coreutils 9.2+ 에서 건너뛸 때 exit 1 이라 (windeployqt 가 먼저 넣은 Qt DLL) 직접 검사
+          for exe in Mcapture.exe; do
+            for dll in $(ldd "build/$exe" | grep -i mingw64 | awk '{print $3}' | sort -u); do
+              [ -e "build/$(basename "$dll")" ] || cp "$dll" build/
+            done
+          done
+          # windeployqt 는 tls 백엔드를 빼놓는다 — 없으면 HTTPS(자동 업데이트)가 조용히 실패
+          mkdir -p build/tls
+          cp /mingw64/share/qt6/plugins/tls/qschannelbackend.dll build/tls/
+          ls build/*.exe build/tls
+
+      - name: dist zip (make-dist.ps1)
+        shell: pwsh
+        run: |
+          pwsh -File make-dist.ps1
+          Move-Item dist/Mcapture.zip "dist/Mcapture-${{ steps.ver.outputs.version }}-win.zip"
+
+      # main 푸시 확인용 산출물. 계정 전체 Actions 저장 쿼터가 차 있으면 업로드가 실패하는데,
+      # 빌드 검증까지 빨갛게 만들 이유는 없다 (태그 릴리스는 아래에서 artifact 없이 첨부한다)
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        continue-on-error: true
+        with:
+          name: win
+          path: dist/Mcapture-*-win.zip
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0   # 이미 zip — 재압축해도 안 줄고 시간만 든다
+
+      # 태그 푸시는 릴리스에 바로 첨부한다 — artifact 를 거치면 저장 쿼터가 찼을 때
+      # 빌드가 다 됐는데도 릴리스가 통째로 막힌다 (v1.3.9 에서 실제로 발생)
+      - name: 릴리스에 첨부 (win zip)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            $notes = "변경 사항은 [CHANGELOG.md](https://github.com/$env:GITHUB_REPOSITORY/blob/main/CHANGELOG.md) 참고."
+            gh release create $tag --title "Mcapture v${{ steps.ver.outputs.version }}" --notes $notes
+          }
+          $zip = Get-ChildItem dist/Mcapture-*-win.zip | Select-Object -First 1
+          gh release upload $tag $zip.FullName --clobber
+
+  macos:
+    runs-on: macos-latest   # Apple Silicon 러너 — Homebrew Qt 가 arm64 단일 아키텍처라 유니버설 불가
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Homebrew 의존성
+        run: brew install cmake ninja qt
+
+      - name: 버전 읽기
+        id: ver
+        run: |
+          V=$(sed -n 's/^project(Mcapture VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "버전: $V"
+
+      - name: 태그와 CMakeLists 버전 일치 확인
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          test "v${{ steps.ver.outputs.version }}" = "$GITHUB_REF_NAME" || {
+            echo "::error::CMakeLists.txt 버전(${{ steps.ver.outputs.version }}) 과 태그($GITHUB_REF_NAME) 불일치"; exit 1; }
+
+      # 빌드 → macdeployqt → rpath 교정 → ad-hoc 서명 → dmg (로컬과 같은 스크립트)
+      - name: 빌드 + dmg (make-dist-mac.sh)
+        run: bash ./make-dist-mac.sh
+
+      # 자동 업데이트 페이로드 — release-mac.sh 와 같은 ditto 압축 (서명·xattr 보존)
+      - name: 자동 업데이트용 .app zip
+        run: ditto -c -k --keepParent build-mac-dist/Mcapture.app "dist/Mcapture-${{ steps.ver.outputs.version }}-mac.zip"
+
+      - name: 자립성 검증 (Homebrew 경로 의존 없음)
+        run: |
+          APP=build-mac-dist/Mcapture.app
+          if otool -L "$APP/Contents/MacOS/Mcapture" | tail -n +2 | grep -q /opt/homebrew; then
+            echo "::error::실행 파일이 /opt/homebrew 를 참조합니다"; otool -L "$APP/Contents/MacOS/Mcapture"; exit 1; fi
+          codesign --verify --deep --strict "$APP" && echo "codesign OK"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        continue-on-error: true
+        with:
+          name: mac
+          path: |
+            dist/Mcapture-*-mac.dmg
+            dist/Mcapture-*-mac.zip
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+      - name: 릴리스에 첨부 (mac dmg·zip)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "Mcapture v$V" --notes "변경 사항은 [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md) 참고." || true
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/Mcapture-*-mac.dmg dist/Mcapture-*-mac.zip --clobber
