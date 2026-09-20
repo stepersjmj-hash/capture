@@ -1,4 +1,5 @@
 #include "ClipboardWatch.h"
+#include "Log.h"
 #include "Platform.h"
 
 #include <QClipboard>
@@ -70,8 +71,12 @@ void ClipboardWatch::settle() {
             m_settle.start();
         return;
     }
-    if (!m_lastImage.isNull() && img.size() == m_lastImage.size() && img == m_lastImage)
+    if (!m_lastImage.isNull() && img.size() == m_lastImage.size() &&
+        img.convertToFormat(QImage::Format_ARGB32) == m_lastImage.convertToFormat(QImage::Format_ARGB32)) {
+        mlog("clipboard: same image as last, skipped");
         return;
+    }
+    mlog(QString("clipboard: new image %1x%2 -> open").arg(img.width()).arg(img.height()));
     m_lastImage = img;
     emit imageArrived(img);
 }

@@ -1,4 +1,5 @@
 #include "HotKey.h"
+#include "Log.h"
 #include "Platform.h"
 
 #include <QAbstractNativeEventFilter>
@@ -20,6 +21,7 @@ QHash<int, HotKey *> &registry() {
 
 struct HotKeyDispatch {
     static void fire(int id) {
+        mlog(QString("hotkey fired id=%1").arg(id));
         if (HotKey *h = registry().value(id))
             emit h->activated();
     }

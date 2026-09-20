@@ -132,16 +132,33 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
     updateActions();
     updateTitle();
 
-    // 창 크기: 이미지 원본 크기(+크롬), 화면의 92% 를 넘지 않게
+    fitToImage(image.size());
+}
+
+// 창 크기: 이미지 원본 크기(+크롬), 화면의 92% 를 넘지 않게. 화면 가운데 배치.
+void EditorWindow::fitToImage(const QSize &imageSize) {
     QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
     if (!screen)
         screen = QGuiApplication::primaryScreen();
     const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1280, 800);
-    QSize want = image.size() + QSize(24, 24 + 74 + 28);
+    QSize want = imageSize + QSize(24, 24 + 74 + 28);
     want.setWidth(qBound(760, want.width(), int(avail.width() * 0.92)));
     want.setHeight(qBound(440, want.height(), int(avail.height() * 0.92)));
     resize(want);
     move(avail.center() - QPoint(want.width() / 2, want.height() / 2));
+}
+
+bool EditorWindow::hasEdits() const { return m_canvas->hasItems() || m_canvas->canUndo(); }
+
+void EditorWindow::replaceImage(const QImage &image) {
+    m_canvas->finishTextEdit();
+    m_canvas->setImage(image);
+    m_sizeLabel->setText(QString("%1 × %2").arg(image.width()).arg(image.height()));
+    m_savedRev = m_copiedRev = -1;
+    m_lastSaved.clear();
+    updateActions();
+    updateTitle();
+    fitToImage(image.size());
 }
 
 QToolButton *EditorWindow::toolButton(char16_t glyph, const QString &label, const QString &tip, bool checkable) {

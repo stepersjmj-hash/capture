@@ -5,6 +5,7 @@
 #include "EditorWindow.h"
 #include "HotKey.h"
 #include "Icons.h"
+#include "Log.h"
 #include "SettingsDialog.h"
 #include "Updater.h"
 
@@ -19,6 +20,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QScreen>
 #include <QSettings>
 #include <QSystemTrayIcon>
 #include <QTimer>
@@ -30,7 +32,15 @@ App::App(QSettings &settings, QObject *parent) : QObject(parent), m_settings(set
     connect(m_hkFull, &HotKey::activated, this, [this] { captureFull(0); });
 
     m_watch = new ClipboardWatch(this);
-    connect(m_watch, &ClipboardWatch::imageArrived, this, [this](const QImage &img) { openEditor(img, false); });
+    connect(m_watch, &ClipboardWatch::imageArrived, this, &App::onClipboardImage);
+    m_pendingTimer.setSingleShot(true);
+    m_pendingTimer.setInterval(8000);
+    connect(&m_pendingTimer, &QTimer::timeout, this, [this] {
+        mlog("clipboard: held full-size image timed out -> open");
+        const QImage img = m_pendingClip;
+        m_pendingClip = QImage();
+        openEditor(img, false);
+    });
 
     buildTray();
     setupUpdater();
@@ -165,6 +175,7 @@ void App::captureRegion(int delayMs) {
 }
 
 void App::captureFull(int delayMs) {
+    mlog("captureFull requested");
     QTimer::singleShot(delayMs, this, [this] {
         const QImage img = RegionCapture::grabFullScreen();
         if (img.isNull())
@@ -185,9 +196,46 @@ void App::openClipboardImage() {
     openEditor(img, false);
 }
 
+// 화면 하나 또는 전체 데스크톱과 같은 픽셀 크기인가 (스니핑 도구의 선행 복사본 판별)
+bool App::isScreenSized(const QSize &size) const {
+    QRect virt;
+    for (QScreen *s : QGuiApplication::screens()) {
+        const qreal dpr = s->devicePixelRatio();
+        const QSize px(qRound(s->geometry().width() * dpr), qRound(s->geometry().height() * dpr));
+        if (px == size)
+            return true;
+        virt |= QRect(QPoint(qRound(s->geometry().x() * dpr), qRound(s->geometry().y() * dpr)), px);
+    }
+    return virt.size() == size;
+}
+
+void App::onClipboardImage(const QImage &img) {
+    if (isScreenSized(img.size())) {
+        mlog(QString("clipboard: full-size %1x%2 held").arg(img.width()).arg(img.height()));
+        m_pendingClip = img;
+        m_pendingTimer.start();
+        return;
+    }
+    if (m_pendingTimer.isActive()) {   // 전체 화면 뒤에 온 영역 = 스니핑 도구 결과, 전체는 버린다
+        mlog("clipboard: dropped held full-size image");
+        m_pendingTimer.stop();
+        m_pendingClip = QImage();
+    }
+    if (m_lastClipWin && m_lastClipTime.isValid() && m_lastClipTime.elapsed() < 20000 && !m_lastClipWin->hasEdits()) {
+        mlog(QString("clipboard: replace image in last window %1x%2").arg(img.width()).arg(img.height()));
+        m_lastClipWin->replaceImage(img);
+        m_lastClipTime.restart();
+        m_lastClipWin->raise();
+        m_lastClipWin->activateWindow();
+        return;
+    }
+    openEditor(img, false);
+}
+
 void App::openEditor(const QImage &img, bool fromCapture) {
     if (img.isNull())
         return;
+    mlog(QString("openEditor %1x%2 fromCapture=%3").arg(img.width()).arg(img.height()).arg(fromCapture));
     if (fromCapture && m_settings.value("capture/autoCopy", true).toBool()) {
         QApplication::clipboard()->setImage(img);
         m_watch->ignoreCurrent(img);
@@ -195,6 +243,10 @@ void App::openEditor(const QImage &img, bool fromCapture) {
     auto *w = new EditorWindow(m_settings, img);
     connect(w, &EditorWindow::copiedToClipboard, m_watch, [this](const QImage &img) { m_watch->ignoreCurrent(img); });
     connect(w, &EditorWindow::settingsRequested, this, &App::showSettings);
+    if (!fromCapture) {
+        m_lastClipWin = w;
+        m_lastClipTime.restart();
+    }
     w->show();
     w->raise();
     w->activateWindow();
@@ -203,6 +255,7 @@ void App::openEditor(const QImage &img, bool fromCapture) {
 // ── 명령줄 ───────────────────────────────────────────────
 void App::handleArgs(const QStringList &args, bool fromOtherInstance) {
     bool handled = false;
+    mlog(QString("handleArgs [%1] other=%2").arg(args.join(' ')).arg(fromOtherInstance));
     for (int i = 0; i < args.size(); ++i) {
         const QString a = args[i];
         if (a == "--region") {

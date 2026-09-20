@@ -24,6 +24,7 @@ add_executable(mcapture
     src/HotKey.cpp
     src/HotKey.h
     src/Icons.h
+    src/Log.h
     src/Platform.h
     src/SettingsDialog.cpp
     src/SettingsDialog.h

@@ -19,6 +19,10 @@ class EditorWindow : public QMainWindow {
 public:
     EditorWindow(QSettings &settings, const QImage &image, QWidget *parent = nullptr);
 
+    bool hasEdits() const;
+    // 다른 이미지로 교체 (스니핑 도구가 전체 화면 뒤에 영역을 보낼 때 새 창 대신 씀)
+    void replaceImage(const QImage &image);
+
 signals:
     void copiedToClipboard(const QImage &image);   // 클립보드 감시가 우리 복사를 새 캡처로 오인하지 않게
     void settingsRequested();
@@ -33,6 +37,7 @@ private:
     void updateChips();
     void updateActions();
     void updateTitle();
+    void fitToImage(const QSize &imageSize);
     bool dirty() const;
     void copyImage();
     void save();

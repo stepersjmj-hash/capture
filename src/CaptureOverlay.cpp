@@ -1,4 +1,5 @@
 #include "CaptureOverlay.h"
+#include "Log.h"
 #include "Platform.h"
 #include "Theme.h"
 
@@ -35,9 +36,12 @@ QRect CaptureOverlay::currentRect() const {
 }
 
 void CaptureOverlay::finish(const QRect &logical) {
-    if (m_done)
+    if (m_done) {
+        mlog("overlay finish ignored (already done)");
         return;
+    }
     m_done = true;
+    mlog(QString("overlay finish %1x%2 at %3,%4").arg(logical.width()).arg(logical.height()).arg(logical.x()).arg(logical.y()));
     // 논리 좌표 → 실제 픽셀 (고DPI 화면은 배율만큼 크다)
     const qreal dpr = m_shot.devicePixelRatio();
     QImage img = m_shot.toImage();
@@ -61,6 +65,7 @@ void CaptureOverlay::mousePressEvent(QMouseEvent *e) {
     }
     if (e->button() != Qt::LeftButton)
         return;
+    mlog(QString("overlay press %1,%2").arg(e->pos().x()).arg(e->pos().y()));
     m_dragging = true;
     m_start = m_cur = e->pos();
     update();
@@ -79,6 +84,7 @@ void CaptureOverlay::mouseReleaseEvent(QMouseEvent *e) {
     m_cur = e->pos();
     const QRect r = currentRect();
     m_dragging = false;
+    mlog(QString("overlay release %1,%2 rect %3x%4").arg(e->pos().x()).arg(e->pos().y()).arg(r.width()).arg(r.height()));
     if (r.width() >= 3 && r.height() >= 3)
         finish(r);
     else
@@ -88,6 +94,7 @@ void CaptureOverlay::mouseReleaseEvent(QMouseEvent *e) {
 void CaptureOverlay::keyPressEvent(QKeyEvent *e) {
     if (m_done)
         return;
+    mlog(QString("overlay key %1").arg(e->key()));
     switch (e->key()) {
     case Qt::Key_Escape:
         emit cancelled();
@@ -157,8 +164,11 @@ RegionCapture::RegionCapture(std::function<void(const QImage &)> onDone)
     : QObject(nullptr), m_onDone(std::move(onDone)) {}
 
 void RegionCapture::start(std::function<void(const QImage &)> onDone, int delayMs) {
-    if (s_active)
+    if (s_active) {
+        mlog("region start ignored (active)");
         return;
+    }
+    mlog(QString("region start delay=%1").arg(delayMs));
     s_active = new RegionCapture(std::move(onDone));
     if (delayMs > 0)
         QTimer::singleShot(delayMs, s_active, &RegionCapture::begin);
@@ -181,9 +191,11 @@ void RegionCapture::begin() {
     const QPoint cursor = QCursor::pos();
     CaptureOverlay *focusTarget = nullptr;
     // 먼저 모든 화면을 찍은 뒤에 창을 띄운다 (오버레이가 다른 화면 스크린샷에 찍히지 않게)
+    mlog("region begin: grabbing");
     QList<QPair<QScreen *, QPixmap>> shots;
     for (QScreen *s : QGuiApplication::screens())
         shots.append({s, s->grabWindow(0)});
+    mlog("region begin: grabbed, showing overlays");
     for (const auto &pair : shots) {
         QScreen *screen = pair.first;
         auto *ov = new CaptureOverlay(screen, pair.second);
@@ -209,6 +221,7 @@ void RegionCapture::begin() {
         focusTarget->activateWindow();
         focusTarget->setFocus();
     }
+    mlog("region begin: overlays shown");
 }
 
 void RegionCapture::closeAll() {
