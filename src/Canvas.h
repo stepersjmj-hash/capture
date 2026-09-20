@@ -47,6 +47,10 @@ signals:
     void changed();
     void selectionChanged();
     void hint(const QString &text);
+    // 선택·휠·손잡이로 값이 바뀌었을 때 툴바 스핀/색 칩을 맞추기 위한 알림
+    void textPxChanged(int px);
+    void lineWidthChanged(int w);
+    void colorChanged(const QColor &c);
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -56,6 +60,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *) override;
     void mouseDoubleClickEvent(QMouseEvent *) override;
     void keyPressEvent(QKeyEvent *) override;
+    void wheelEvent(QWheelEvent *) override;
 
 private:
     void relayout();
@@ -70,6 +75,8 @@ private:
     void placeTextEdit();
     void snapLine(QPointF &p2, const QPointF &p1, bool free) const;
     void updateCursor(const QPointF &imgPos);
+    QRectF handleRect() const;           // 선택된 텍스트의 크기 조절 손잡이 (위젯 좌표)
+    void applyTextPx(int px);
     QString toolHint() const;
 
     QImage m_img;
@@ -91,6 +98,9 @@ private:
     bool m_moving = false;
     bool m_movePushed = false;
     QPointF m_lastPos;
+    bool m_resizing = false;             // 텍스트 손잡이 드래그 중
+    qreal m_rsStartW = 0;
+    int m_rsStartPx = 0;
 
     QLineEdit *m_edit = nullptr;
     int m_editIndex = -1;                // 기존 텍스트를 고치는 중이면 그 인덱스

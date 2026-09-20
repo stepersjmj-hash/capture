@@ -101,6 +101,14 @@ make-dist.ps1 은 없으면 오류를 낸다.
   캡처가 아니라 보고 무시(브라우저 이미지 복사 등). mac 은 dataChanged 가 외부 변경에 안 오므로 500ms 폴링.
 - **전역 단축키(Win)**: `RegisterHotKey(NULL, id, MOD_NOREPEAT|…)` → WM_HOTKEY 가 스레드 메시지(hwnd 0)로
   오고 Qt 디스패처가 네이티브 필터에 넘긴다. 다른 앱이 쓰는 조합은 등록 실패 → 트레이 알림/설정 경고.
+- **오버레이 더블클릭 금지**: 클릭 직후 바로 드래그하면 Qt 가 두 번째 누름에 Press 와 DblClick 을 둘 다 보낸다
+  (QGuiApplicationPrivate::processMouseEvent). 더블클릭 = 전체 화면으로 두었더니 "전체 + 선택 영역" 창이 함께
+  열렸다(사용자 피드백) → 더블클릭 핸들러 제거 + `m_done` 으로 오버레이당 결과 1회. 검증: `mouse.ps1 click` 직후
+  `drag` → 창 1개.
+- **텍스트 크기**: 확정(Enter)하면 그 항목을 **선택 상태**로 둔다(Text 도구에서도 선택 유지) — 글자 스핀·휠(10%)·
+  오른쪽 아래 손잡이 드래그(폭 비율로 px 환산, Mview 방식)가 바로 적용된다. 선택하면 항목의 색·굵기·글자 크기를
+  캔버스 현재값으로 가져오고 `colorChanged/lineWidthChanged/textPxChanged` 로 툴바를 맞춘다 (스핀은
+  QSignalBlocker 로 되먹임 차단).
 - **편집 창 키**: 툴바 버튼은 `Qt::NoFocus` 라 키 입력이 캔버스로 간다. 도구 단축키 V/R/L/A/T/F 는 QAction
   (QLineEdit 텍스트 입력 중에는 QLineEdit 가 ShortcutOverride 로 가로채므로 글자가 그대로 입력된다).
   `Esc` 는 텍스트 취소 → 선택 해제 → 창 닫기 순(`Canvas::cancelPending`).
@@ -113,6 +121,7 @@ make-dist.ps1 은 없으면 오류를 낸다.
 
 ## 현재 상태
 
-- **v1.0.0** (2026-09-20, Windows 세션) — 첫 구현. Windows 실검증: 영역/전체 캡처, 5개 편집 도구, 선택·이동,
+- **v1.0.0** (2026-09-20, Windows 세션) — 첫 구현. 1차 피드백 반영: 텍스트 확정 후 크기 조절(휠·손잡이·스핀),
+  클릭 직후 드래그 시 전체+선택 두 창 문제(더블클릭 제거), 자기 복사본 중복 열기 방지(ignoreCurrent 에 이미지 전달). Windows 실검증: 영역/전체 캡처, 5개 편집 도구, 선택·이동,
   되돌리기, 저장(`사진\Mcapture`), 복사(감시 재진입 없음), 외부 클립보드 이미지 → 창 1개, 닫기 확인.
   미검증: macOS 전반(CI 컴파일 확인만), 다중 모니터·고DPI 실기기, 자동 업데이트 E2E(NAS 에 첫 배포 후 확인 가능).

@@ -15,8 +15,9 @@ public:
 
     void setEnabled(bool on);
     bool enabled() const { return m_enabled; }
-    // 우리가 방금 넣은 내용(복사·자동 복사)은 감지하지 않도록 현재 상태를 기준점으로 삼는다
-    void ignoreCurrent();
+    // 우리가 방금 넣은 내용(복사·자동 복사)은 감지하지 않도록 현재 상태를 기준점으로 삼는다.
+    // 이미지를 주면 지연 렌더링 등으로 시퀀스가 나중에 또 바뀌어도 같은 이미지는 열지 않는다.
+    void ignoreCurrent(const QImage &ours = QImage());
 
 signals:
     void imageArrived(const QImage &image);

@@ -5,6 +5,7 @@ Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;
 public class W {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT r, int size);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lp);
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
@@ -24,7 +25,8 @@ if ($h -eq [IntPtr]::Zero) { Write-Output "NOTFOUND"; exit 1 }
 [W]::SetForegroundWindow($h) | Out-Null
 Start-Sleep -Milliseconds 300
 $r = New-Object W+RECT
-[W]::GetWindowRect($h, [ref]$r) | Out-Null
+# 보이는 테두리 기준(DWMWA_EXTENDED_FRAME_BOUNDS=9) — GetWindowRect 는 Win11 투명 리사이즈 테두리(좌·우·하 ~7px)를 포함해 좌표가 어긋난다
+if ([W]::DwmGetWindowAttribute($h, 9, [ref]$r, 16) -ne 0) { [W]::GetWindowRect($h, [ref]$r) | Out-Null }
 $w = $r.R - $r.L; $hh = $r.B - $r.T
 $bmp = New-Object System.Drawing.Bitmap $w, $hh
 $g = [System.Drawing.Graphics]::FromImage($bmp)

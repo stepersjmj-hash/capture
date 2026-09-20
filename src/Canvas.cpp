@@ -5,12 +5,15 @@
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QWheelEvent>
 #include <QtMath>
 #include <cmath>
 
 namespace {
 constexpr int kMargin = 12;
 constexpr qreal kHitTolPx = 6.0;   // 화면 픽셀 기준 허용 오차
+constexpr int kMinTextPx = 6, kMaxTextPx = 400;
+constexpr qreal kHandle = 10.0;    // 텍스트 크기 조절 손잡이 한 변 (화면 픽셀)
 } // namespace
 
 Canvas::Canvas(QWidget *parent) : QWidget(parent) {
@@ -89,7 +92,7 @@ void Canvas::setTool(Tool t) {
         commitTextEdit();
     m_tool = t;
     m_drawing = false;
-    if (t != Tool::Select)
+    if (t != Tool::Select && t != Tool::Text)
         select(-1);
     updateCursor(toImage(mapFromGlobal(QCursor::pos())));
     emit hint(toolHint());
@@ -118,6 +121,7 @@ void Canvas::setLineWidth(int w) {
 }
 
 void Canvas::setTextPx(int px) {
+    px = qBound(kMinTextPx, px, kMaxTextPx);
     m_textPx = px;
     if (m_sel >= 0 && m_items[m_sel].type == Tool::Text && m_items[m_sel].textPx != px) {
         pushUndo();
@@ -128,13 +132,22 @@ void Canvas::setTextPx(int px) {
         placeTextEdit();
 }
 
+// 휠·손잡이에서 온 크기 변경: 항목에 적용하고 툴바 스핀에도 알린다
+void Canvas::applyTextPx(int px) {
+    px = qBound(kMinTextPx, px, kMaxTextPx);
+    if (px == m_textPx)
+        return;
+    setTextPx(px);
+    emit textPxChanged(px);
+}
+
 QString Canvas::toolHint() const {
     switch (m_tool) {
-    case Tool::Select: return QStringLiteral("클릭으로 선택 · 드래그로 이동 · Delete 삭제 · 텍스트는 더블클릭으로 수정");
+    case Tool::Select: return QStringLiteral("클릭으로 선택 · 드래그로 이동 · 휠/글자 칸/오른쪽 아래 손잡이로 크기 · Delete 삭제 · 텍스트는 더블클릭으로 수정");
     case Tool::Rect: return QStringLiteral("드래그로 사각형 표시");
     case Tool::Line: return QStringLiteral("드래그로 밑줄(선) — 수평·수직에 가까우면 자동으로 맞춰짐, Shift 로 자유 각도");
     case Tool::Arrow: return QStringLiteral("드래그로 화살표 (끝점이 머리)");
-    case Tool::Text: return QStringLiteral("넣을 위치를 클릭 → 입력 → Enter (Esc 취소)");
+    case Tool::Text: return QStringLiteral("넣을 위치를 클릭 → 입력 → Enter · 크기는 휠, 글자 칸, 오른쪽 아래 손잡이 (Esc 취소)");
     case Tool::Fill: return QStringLiteral("드래그한 영역을 현재 색으로 채움 (가리기용)");
     }
     return QString();
@@ -185,10 +198,27 @@ void Canvas::deleteSelected() {
     bump();
 }
 
+// 선택하면 그 항목의 색·굵기·글자 크기를 현재 값으로 가져와 툴바가 그것을 보여 준다
 void Canvas::select(int idx) {
     if (m_sel == idx)
         return;
     m_sel = idx;
+    if (idx >= 0 && idx < m_items.size()) {
+        const Item &it = m_items[idx];
+        if (it.color != m_color) {
+            m_color = it.color;
+            emit colorChanged(m_color);
+        }
+        if (it.type == Tool::Text) {
+            if (it.textPx != m_textPx) {
+                m_textPx = it.textPx;
+                emit textPxChanged(m_textPx);
+            }
+        } else if (it.type != Tool::Fill && it.width != m_width) {
+            m_width = it.width;
+            emit lineWidthChanged(m_width);
+        }
+    }
     emit selectionChanged();
     update();
 }
@@ -199,6 +229,14 @@ int Canvas::hitTest(const QPointF &img) const {
         if (Annot::hit(m_items[i], img, tol))
             return i;
     return -1;
+}
+
+QRectF Canvas::handleRect() const {
+    if (m_sel < 0 || m_sel >= m_items.size() || m_items[m_sel].type != Tool::Text)
+        return QRectF();
+    const QRectF b = Annot::bounds(m_items[m_sel]);
+    const QPointF br = toWidget(b.bottomRight()) + QPointF(4, 4);
+    return QRectF(br.x() - kHandle / 2, br.y() - kHandle / 2, kHandle, kHandle);
 }
 
 bool Canvas::cancelPending() {
@@ -230,8 +268,7 @@ void Canvas::beginTextEdit(const QPointF &imgPos, int editIndex) {
     if (editIndex >= 0) {
         m_edit->setText(m_items[editIndex].text);
         m_editPos = m_items[editIndex].p1;
-        m_color = m_items[editIndex].color;
-        m_textPx = m_items[editIndex].textPx;
+        select(editIndex);   // 색·크기를 그 항목 값으로
     } else {
         m_edit->clear();
     }
@@ -269,10 +306,13 @@ void Canvas::commitTextEdit() {
             m_items.removeAt(m_editIndex);
             select(-1);
             bump();
-        } else if (m_items[m_editIndex].text != text) {
-            pushUndo();
-            m_items[m_editIndex].text = text;
-            bump();
+        } else {
+            if (m_items[m_editIndex].text != text) {
+                pushUndo();
+                m_items[m_editIndex].text = text;
+                bump();
+            }
+            select(m_editIndex);
         }
     } else if (!text.isEmpty()) {
         pushUndo();
@@ -284,6 +324,7 @@ void Canvas::commitTextEdit() {
         it.text = text;
         it.textPx = m_textPx;
         m_items.append(it);
+        select(m_items.size() - 1);   // 확정 직후 바로 크기·색을 바꾸거나 옮길 수 있게 선택 상태로
         bump();
     }
     m_editIndex = -1;
@@ -310,7 +351,9 @@ void Canvas::snapLine(QPointF &p2, const QPointF &p1, bool free) const {
 }
 
 void Canvas::updateCursor(const QPointF &imgPos) {
-    if (m_tool == Tool::Select) {
+    if (m_resizing || handleRect().contains(toWidget(imgPos))) {
+        setCursor(Qt::SizeFDiagCursor);
+    } else if (m_tool == Tool::Select) {
         if (m_moving)
             setCursor(Qt::ClosedHandCursor);
         else
@@ -335,10 +378,20 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
         return;
     if (m_edit->isVisible()) {
         commitTextEdit();
-        if (m_tool == Tool::Text)   // 입력 확정 후 같은 클릭으로 새 입력을 시작하지 않는다
-            return;
+        if (m_tool == Tool::Text && !handleRect().contains(e->position()))
+            return;   // 입력 확정 후 같은 클릭으로 새 입력을 시작하지 않는다
     }
     setFocus();
+
+    // 선택된 텍스트의 오른쪽 아래 손잡이: 드래그로 크기 조절 (도구와 무관)
+    if (handleRect().contains(e->position())) {
+        pushUndo();
+        m_resizing = true;
+        m_rsStartW = qMax(1.0, Annot::textRect(m_items[m_sel]).width());
+        m_rsStartPx = m_items[m_sel].textPx;
+        setCursor(Qt::SizeFDiagCursor);
+        return;
+    }
 
     switch (m_tool) {
     case Tool::Select: {
@@ -377,6 +430,13 @@ void Canvas::mouseMoveEvent(QMouseEvent *e) {
     if (m_img.isNull())
         return;
     const QPointF pos = toImage(e->position());
+    if (m_resizing && m_sel >= 0) {
+        // 좌상단 고정, 텍스트 폭 비율로 글자 크기 환산 (Mview 텍스트 조각과 같은 방식)
+        const qreal w = pos.x() - m_items[m_sel].p1.x();
+        const int px = int(std::lround(m_rsStartPx * (w / m_rsStartW)));
+        applyTextPx(px);
+        return;
+    }
     if (m_drawing) {
         m_cur.p2 = pos;
         if (m_cur.type == Tool::Line || m_cur.type == Tool::Arrow)
@@ -403,6 +463,11 @@ void Canvas::mouseMoveEvent(QMouseEvent *e) {
 void Canvas::mouseReleaseEvent(QMouseEvent *e) {
     if (e->button() != Qt::LeftButton)
         return;
+    if (m_resizing) {
+        m_resizing = false;
+        updateCursor(toImage(e->position()));
+        return;
+    }
     if (m_moving) {
         m_moving = false;
         updateCursor(toImage(e->position()));
@@ -434,6 +499,35 @@ void Canvas::mouseDoubleClickEvent(QMouseEvent *e) {
         select(idx);
         beginTextEdit(pos, idx);
     }
+}
+
+// 휠: 입력 중이거나 선택된 텍스트는 글자 크기 10%씩, 선택된 도형은 굵기 1px 씩
+void Canvas::wheelEvent(QWheelEvent *e) {
+    const int delta = e->angleDelta().y();
+    if (delta == 0) {
+        e->ignore();
+        return;
+    }
+    const bool up = delta > 0;
+    const bool textTarget = m_edit->isVisible() || (m_sel >= 0 && m_items[m_sel].type == Tool::Text);
+    if (textTarget) {
+        int px = int(std::lround(m_textPx * (up ? 1.1 : 1 / 1.1)));
+        if (px == m_textPx)
+            px += up ? 1 : -1;
+        applyTextPx(px);
+        e->accept();
+        return;
+    }
+    if (m_sel >= 0 && m_items[m_sel].type != Tool::Fill) {
+        const int w = qBound(1, m_width + (up ? 1 : -1), 40);
+        if (w != m_width) {
+            setLineWidth(w);
+            emit lineWidthChanged(w);
+        }
+        e->accept();
+        return;
+    }
+    e->ignore();
 }
 
 void Canvas::keyPressEvent(QKeyEvent *e) {
@@ -491,5 +585,11 @@ void Canvas::paintEvent(QPaintEvent *) {
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
         p.drawRect(wb.adjusted(-4, -4, 4, 4));
+        const QRectF h = handleRect();
+        if (!h.isNull()) {   // 텍스트: 오른쪽 아래 크기 조절 손잡이
+            p.setPen(QPen(QColor(20, 20, 24), 1));
+            p.setBrush(Theme::accent());
+            p.drawRect(h);
+        }
     }
 }

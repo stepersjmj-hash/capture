@@ -1,7 +1,9 @@
 #pragma once
 
 // 영역 선택 오버레이 — 화면마다 하나씩 띄워 그 화면의 스크린샷 위에서 영역을 고른다.
-// 드래그해서 놓으면 바로 확정(스니핑 도구와 같은 흐름), Enter/더블클릭 = 그 화면 전체, Esc/우클릭 = 취소.
+// 드래그해서 놓으면 바로 확정(스니핑 도구와 같은 흐름), Enter = 그 화면 전체, Esc/우클릭 = 취소.
+// 더블클릭은 일부러 아무것도 하지 않는다 — 클릭 직후 바로 드래그를 시작하면 Qt 가 두 번째 누름에
+// DblClick 도 함께 보내서 "전체 화면"과 "선택 영역"이 동시에 열렸다 (v1.0.0 피드백).
 #include <QImage>
 #include <QList>
 #include <QObject>
@@ -28,7 +30,6 @@ protected:
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;
-    void mouseDoubleClickEvent(QMouseEvent *) override;
     void keyPressEvent(QKeyEvent *) override;
 
 private:
@@ -39,6 +40,7 @@ private:
     QScreen *m_screen;
     QPixmap m_shot;
     bool m_dragging = false;
+    bool m_done = false;                 // 결과를 한 번만 낸다
     QPoint m_start, m_cur, m_mouse;
 };
 

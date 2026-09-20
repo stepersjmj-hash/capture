@@ -20,7 +20,7 @@ public:
     EditorWindow(QSettings &settings, const QImage &image, QWidget *parent = nullptr);
 
 signals:
-    void copiedToClipboard();    // 클립보드 감시가 우리 복사를 새 캡처로 오인하지 않게
+    void copiedToClipboard(const QImage &image);   // 클립보드 감시가 우리 복사를 새 캡처로 오인하지 않게
     void settingsRequested();
 
 protected:

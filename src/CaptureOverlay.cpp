@@ -35,6 +35,9 @@ QRect CaptureOverlay::currentRect() const {
 }
 
 void CaptureOverlay::finish(const QRect &logical) {
+    if (m_done)
+        return;
+    m_done = true;
     // 논리 좌표 → 실제 픽셀 (고DPI 화면은 배율만큼 크다)
     const qreal dpr = m_shot.devicePixelRatio();
     QImage img = m_shot.toImage();
@@ -50,6 +53,8 @@ void CaptureOverlay::finish(const QRect &logical) {
 }
 
 void CaptureOverlay::mousePressEvent(QMouseEvent *e) {
+    if (m_done)
+        return;
     if (e->button() == Qt::RightButton) {
         emit cancelled();
         return;
@@ -80,12 +85,9 @@ void CaptureOverlay::mouseReleaseEvent(QMouseEvent *e) {
         update();   // 클릭만 한 경우: 선택 없음 상태로
 }
 
-void CaptureOverlay::mouseDoubleClickEvent(QMouseEvent *e) {
-    if (e->button() == Qt::LeftButton)
-        finish(rect());
-}
-
 void CaptureOverlay::keyPressEvent(QKeyEvent *e) {
+    if (m_done)
+        return;
     switch (e->key()) {
     case Qt::Key_Escape:
         emit cancelled();

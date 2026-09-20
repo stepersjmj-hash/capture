@@ -88,6 +88,15 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
     });
     connect(m_canvas, &Canvas::selectionChanged, this, &EditorWindow::updateActions);
     connect(m_canvas, &Canvas::hint, m_hintLabel, &QLabel::setText);
+    connect(m_canvas, &Canvas::textPxChanged, this, [this](int px) {
+        QSignalBlocker b(m_textPx);
+        m_textPx->setValue(px);
+    });
+    connect(m_canvas, &Canvas::lineWidthChanged, this, [this](int w) {
+        QSignalBlocker b(m_width);
+        m_width->setValue(w);
+    });
+    connect(m_canvas, &Canvas::colorChanged, this, [this](const QColor &) { updateChips(); });
 
     // 단축키
     auto act = [this](const QList<QKeySequence> &keys, auto fn) {
@@ -249,7 +258,7 @@ QWidget *EditorWindow::buildToolbar() {
     // 내보내기
     auto *copyBtn = toolButton(Icons::kCopy, "복사", "클립보드에 복사 (Ctrl+C)", false);
     auto *saveBtn = toolButton(Icons::kSave, "저장", "저장 폴더에 PNG 로 저장 (Ctrl+S)", false);
-    auto *saveAsBtn = toolButton(Icons::kSaveAs, "다른 이름", "다른 이름으로 저장 (Ctrl+Shift+S)", false);
+    auto *saveAsBtn = toolButton(Icons::kSaveAs, "다른이름", "다른 이름으로 저장 (Ctrl+Shift+S)", false);
     m_folderBtn = toolButton(Icons::kFolder, "폴더", "저장 폴더 열기", false);
     auto *settingsBtn = toolButton(Icons::kSettings, "설정", "단축키·저장 폴더 등 설정", false);
     connect(copyBtn, &QToolButton::clicked, this, [this] { copyImage(); });
@@ -319,8 +328,9 @@ QString EditorWindow::uniquePath(const QString &dir, const QString &ext) const {
 
 void EditorWindow::copyImage() {
     m_canvas->finishTextEdit();
-    QApplication::clipboard()->setImage(m_canvas->flattened());
-    emit copiedToClipboard();
+    const QImage out = m_canvas->flattened();
+    QApplication::clipboard()->setImage(out);
+    emit copiedToClipboard(out);
     m_copiedRev = m_canvas->revision();
     flash("클립보드에 복사됨");
     updateTitle();

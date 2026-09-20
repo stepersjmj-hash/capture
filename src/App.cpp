@@ -190,10 +190,10 @@ void App::openEditor(const QImage &img, bool fromCapture) {
         return;
     if (fromCapture && m_settings.value("capture/autoCopy", true).toBool()) {
         QApplication::clipboard()->setImage(img);
-        m_watch->ignoreCurrent();
+        m_watch->ignoreCurrent(img);
     }
     auto *w = new EditorWindow(m_settings, img);
-    connect(w, &EditorWindow::copiedToClipboard, m_watch, &ClipboardWatch::ignoreCurrent);
+    connect(w, &EditorWindow::copiedToClipboard, m_watch, [this](const QImage &img) { m_watch->ignoreCurrent(img); });
     connect(w, &EditorWindow::settingsRequested, this, &App::showSettings);
     w->show();
     w->raise();

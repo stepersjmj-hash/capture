@@ -29,9 +29,11 @@ void ClipboardWatch::setEnabled(bool on) {
         m_lastSeq = sequence();   // 켜기 전 내용은 무시
 }
 
-void ClipboardWatch::ignoreCurrent() {
+void ClipboardWatch::ignoreCurrent(const QImage &ours) {
     m_settle.stop();
     m_lastSeq = sequence();
+    if (!ours.isNull())
+        m_lastImage = ours;
 }
 
 quint64 ClipboardWatch::sequence() const {
