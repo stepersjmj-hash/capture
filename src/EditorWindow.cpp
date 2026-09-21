@@ -1,6 +1,7 @@
 #include "EditorWindow.h"
 #include "Canvas.h"
 #include "Defaults.h"
+#include "HelpDialog.h"
 #include "Icons.h"
 #include "Theme.h"
 
@@ -18,6 +19,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
@@ -76,7 +78,11 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
     statusBar()->addWidget(m_sizeLabel);
     statusBar()->addWidget(makeSep(this));
     statusBar()->addWidget(m_hintLabel, 1);
+    auto *helpHint = new QLabel("F1 단축키", this);
+    helpHint->setObjectName("dim");
+    helpHint->setToolTip("단축키 보기 (F1)");
     statusBar()->addPermanentWidget(m_msgLabel);
+    statusBar()->addPermanentWidget(helpHint);
     statusBar()->setSizeGripEnabled(true);
     m_msgTimer = new QTimer(this);
     m_msgTimer->setSingleShot(true);
@@ -103,6 +109,7 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
         fitToImage(sz, true);   // 자른 뒤에도 창 위치는 그대로
     });
     connect(m_canvas, &Canvas::colorPickRequested, this, [this] { pickColor(); });
+    connect(m_canvas, &Canvas::menuRequested, this, &EditorWindow::showCanvasMenu);
 
     // 단축키
     auto act = [this](const QList<QKeySequence> &keys, auto fn) {
@@ -112,21 +119,30 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
         connect(a, &QAction::triggered, this, fn);
         addAction(a);
     };
-    act({QKeySequence::Undo}, [this] { m_canvas->undo(); });
-    act({QKeySequence::Redo, QKeySequence("Ctrl+Y")}, [this] { m_canvas->redo(); });
-    act({QKeySequence::Copy}, [this] { copyImage(); });
-    act({QKeySequence::Save}, [this] { save(); });
+    act({QKeySequence("Ctrl+Z")}, [this] { m_canvas->undo(); });
+    act({QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y")}, [this] { m_canvas->redo(); });
+    act({QKeySequence("Ctrl+C")}, [this] { copyImage(); });
+    act({QKeySequence("Ctrl+S")}, [this] { save(); });
     act({QKeySequence("Ctrl+Shift+S")}, [this] { saveAs(); });
+    act({QKeySequence("Ctrl+F")}, [this] { openFolder(); });
+    act({QKeySequence("Ctrl+A")}, [this] { selectAll(); });
     act({QKeySequence::Close}, [this] { close(); });
     act({QKeySequence(Qt::Key_Escape)}, [this] { onEscape(); });
+    act({QKeySequence(Qt::Key_F1)}, [this] { showHelp(); });
     act({QKeySequence(Qt::Key_Delete), QKeySequence(Qt::Key_Backspace)}, [this] { m_canvas->deleteSelected(); });
-    const struct { Qt::Key key; Tool tool; } toolKeys[] = {
-        {Qt::Key_V, Tool::Select}, {Qt::Key_S, Tool::Region}, {Qt::Key_R, Tool::Rect},
-        {Qt::Key_L, Tool::Line},   {Qt::Key_A, Tool::Arrow},  {Qt::Key_T, Tool::Text},
-        {Qt::Key_F, Tool::Fill},
+    // 도구 키 — 화살표는 Shift+. 하나만 등록한다. 같은 이벤트에 맞는 조합("Shift+." 과 ">")을
+    // 함께 걸면 Qt 가 "모호한 단축키" 로 보고 **아무것도 실행하지 않는다** (실측: 키만 먹히고 무반응).
+    const struct { QList<QKeySequence> keys; Tool tool; } toolKeys[] = {
+        {{QKeySequence(Qt::Key_Space)}, Tool::Select},
+        {{QKeySequence(Qt::Key_C)}, Tool::Region},
+        {{QKeySequence(Qt::Key_M)}, Tool::Rect},
+        {{QKeySequence(Qt::Key_U)}, Tool::Line},
+        {{QKeySequence("Shift+.")}, Tool::Arrow},
+        {{QKeySequence(Qt::Key_T)}, Tool::Text},
+        {{QKeySequence(Qt::Key_F)}, Tool::Fill},
     };
     for (const auto &tk : toolKeys)
-        act({QKeySequence(tk.key)}, [this, t = tk.tool] {
+        act(tk.keys, [this, t = tk.tool] {
             if (auto *b = m_tools->button(int(t)))
                 b->click();
         });
@@ -209,11 +225,12 @@ QWidget *EditorWindow::buildToolbar() {
     m_tools = new QButtonGroup(this);
     m_tools->setExclusive(true);
     const struct { Tool tool; char16_t glyph; const char *label; const char *tip; } defs[] = {
-        {Tool::Select, Icons::kSelect, "선택", "선택 (V) — 클릭으로 고르고 드래그로 이동, 우클릭 메뉴"},
-        {Tool::Region, Icons::kCrop, "영역", "영역 선택 (S) — 드래그 후 우클릭: 자르기 · 색 채우기 · 테두리"},
-        {Tool::Rect, Icons::kRect, "사각형", "사각형 (R)"},
-        {Tool::Line, Icons::kLine, "밑줄", "밑줄 (L)"},
-        {Tool::Arrow, Icons::kArrow, "화살표", "화살표 (A)"},
+        {Tool::Select, Icons::kSelect, "선택", "선택 (Space) — 클릭으로 고르고 드래그로 이동, 우클릭 메뉴"},
+        {Tool::Region, Icons::kCrop, "영역",
+         "영역 선택 (C) — 드래그 후 우클릭: 자르기 · 색 채우기 · 테두리 (Ctrl+A 전체 선택)"},
+        {Tool::Rect, Icons::kRect, "사각형", "사각형 (M)"},
+        {Tool::Line, Icons::kLine, "밑줄", "밑줄 (U)"},
+        {Tool::Arrow, Icons::kArrow, "화살표", "화살표 (Shift+.)"},
         {Tool::Text, Icons::kText, "텍스트", "텍스트 (T) — 확정 후 우클릭으로 테두리·색 변경"},
         {Tool::Fill, Icons::kFill, "채우기", "채우기 (F)"},
     };
@@ -283,7 +300,7 @@ QWidget *EditorWindow::buildToolbar() {
 
     // 되돌리기 · 삭제
     m_undoBtn = toolButton(Icons::kUndo, "되돌리기", "되돌리기 (Ctrl+Z)", false);
-    m_redoBtn = toolButton(Icons::kRedo, "다시실행", "다시 실행 (Ctrl+Y)", false);
+    m_redoBtn = toolButton(Icons::kRedo, "다시실행", "다시 실행 (Ctrl+Shift+Z)", false);
     m_delBtn = toolButton(Icons::kDelete, "삭제", "선택한 항목 삭제 (Delete)", false);
     connect(m_undoBtn, &QToolButton::clicked, this, [this] { m_canvas->undo(); });
     connect(m_redoBtn, &QToolButton::clicked, this, [this] { m_canvas->redo(); });
@@ -297,7 +314,7 @@ QWidget *EditorWindow::buildToolbar() {
     auto *copyBtn = toolButton(Icons::kCopy, "복사", "클립보드에 복사 (Ctrl+C)", false);
     auto *saveBtn = toolButton(Icons::kSave, "저장", "저장 폴더에 PNG 로 저장 (Ctrl+S)", false);
     auto *saveAsBtn = toolButton(Icons::kSaveAs, "다른이름", "다른 이름으로 저장 (Ctrl+Shift+S)", false);
-    m_folderBtn = toolButton(Icons::kFolder, "폴더", "저장 폴더 열기", false);
+    m_folderBtn = toolButton(Icons::kFolder, "폴더", "저장 폴더 열기 (Ctrl+F)", false);
     auto *settingsBtn = toolButton(Icons::kSettings, "설정", "단축키·저장 폴더 등 설정", false);
     connect(copyBtn, &QToolButton::clicked, this, [this] { copyImage(); });
     connect(saveBtn, &QToolButton::clicked, this, [this] { save(); });
@@ -430,6 +447,93 @@ void EditorWindow::openFolder() {
     const QString dir = m_lastSaved.isEmpty() ? saveDir() : QFileInfo(m_lastSaved).absolutePath();
     QDir().mkpath(dir);
     QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+// 전체 선택 = 영역 도구로 바꾸고 이미지 전체를 선택 영역으로
+void EditorWindow::selectAll() {
+    if (auto *b = m_tools->button(int(Tool::Region)))
+        b->click();
+    m_canvas->selectAllRegion();
+}
+
+// 캔버스 빈 곳 우클릭 — 도구 바꾸기 + 도움말·업데이트·정보
+// (항목 위/선택 영역 안에서는 Canvas 가 그 대상에 맞는 메뉴를 띄운다)
+void EditorWindow::showCanvasMenu(const QPoint &globalPos) {
+    QMenu menu(this);
+    QAction *all = menu.addAction(QStringLiteral("전체 선택\tCtrl+A"));
+    menu.addSeparator();
+
+    const struct { Tool tool; const char *label; const char *key; } tools[] = {
+        {Tool::Region, "영역 선택", "C"}, {Tool::Rect, "사각형", "M"},    {Tool::Line, "밑줄", "U"},
+        {Tool::Arrow, "화살표", "Shift+."}, {Tool::Text, "텍스트", "T"},  {Tool::Fill, "채우기", "F"},
+    };
+    QList<QAction *> toolActs;
+    for (const auto &t : tools) {
+        QAction *a = menu.addAction(QString("%1\t%2").arg(QString::fromUtf8(t.label), QString::fromUtf8(t.key)));
+        a->setCheckable(true);
+        a->setChecked(m_canvas->tool() == t.tool);
+        toolActs.append(a);
+    }
+    menu.addSeparator();
+    QAction *help = menu.addAction(QStringLiteral("단축키 보기\tF1"));
+    QAction *upd = menu.addAction(QStringLiteral("업데이트 확인"));
+    QAction *about = menu.addAction(QStringLiteral("Mcapture 버전 정보"));
+
+    const QAction *picked = menu.exec(globalPos);
+    if (!picked)
+        return;
+    if (picked == all) {
+        selectAll();
+    } else if (picked == help) {
+        showHelp();
+    } else if (picked == upd) {
+        emit updateCheckRequested();
+    } else if (picked == about) {
+        emit aboutRequested();
+    } else {
+        const int i = toolActs.indexOf(const_cast<QAction *>(picked));
+        if (i >= 0)
+            if (auto *b = m_tools->button(int(tools[i].tool)))
+                b->click();
+    }
+}
+
+// F1 — Mview 의 단축키 오버레이와 같은 치트시트
+void EditorWindow::showHelp() {
+    m_canvas->finishTextEdit();
+    const QList<HelpDialog::Group> colA = {
+        {"도구",
+         {{"선택", "Space"},
+          {"영역", "C"},
+          {"사각형", "M"},
+          {"밑줄", "U"},
+          {"화살표", "Shift+."},
+          {"텍스트", "T"},
+          {"채우기", "F"}}},
+        {"선택 영역",
+         {{"전체 선택", "Ctrl+A"},
+          {"이 영역으로 자르기", "Enter"},
+          {"정사각형으로 선택", "Shift+드래그"},
+          {"선택 지우기", "Esc"}}},
+    };
+    const QList<HelpDialog::Group> colB = {
+        {"편집",
+         {{"되돌리기", "Ctrl+Z"},
+          {"다시 실행", "Ctrl+Shift+Z"},
+          {"삭제", "Del"},
+          {"1px · 10px 이동", "방향키 · Shift"},
+          {"크기 · 굵기", "휠"},
+          {"항목 메뉴", "우클릭"}}},
+        {"파일",
+         {{"복사", "Ctrl+C"},
+          {"저장", "Ctrl+S"},
+          {"다른 이름으로 저장", "Ctrl+Shift+S"},
+          {"폴더 열기", "Ctrl+F"},
+          {"단축키 보기", "F1"},
+          {"닫기", "Esc · Ctrl+W"}}},
+    };
+    HelpDialog dlg(this, colA, colB);
+    dlg.exec();
 }
 
 void EditorWindow::onEscape() {

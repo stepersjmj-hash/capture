@@ -20,6 +20,7 @@ src/Canvas.*          캔버스 (배율 맞춤, 영역 선택 마퀴·자르기,
                       우클릭 메뉴, 되돌리기 100단계 — 이미지까지 한 칸(Snapshot)이라 자르기도 되돌아간다)
 src/Annotation.h      항목 모델(Item) + 그리기/히트테스트 (이미지 픽셀 좌표 기준). Tool::Region 은
                       화면 위 선택 영역만 다루는 도구라 Item 으로 저장되지 않는다
+src/HelpDialog.*      단축키 치트시트 (F1) — Mview 단축키 오버레이를 옮긴 반투명 모달
 src/SettingsDialog.*  설정 대화상자 (QSettings 에 쓰기만; 적용은 App::applySettings)
 src/Updater.*         NAS 자동 업데이트 (mplayer 에서 이식, 이름만 변경)
 src/Theme.h / Icons.h 디자인 토큰(Mview 차콜+앰버) QSS / Material Icons 글리프 → QIcon
@@ -121,7 +122,10 @@ make-dist.ps1 은 없으면 오류를 낸다.
   창 제목·상태바·창 크기를 다시 맞춘다(`fitToImage(size, keepPos=true)` — 위치는 유지).
   **자르기만 하고 항목이 없어도 "편집됨"** 이어야 하므로 닫기 확인은 `hasItems()` 가 아니라
   `hasContent()`(= 항목 있음 ‖ imageEdited) 를 본다.
-- **우클릭 메뉴**: Windows 는 WM_CONTEXTMENU 가 **버튼을 뗄 때** 오므로, 누를 때 `cancelPending()`
+- **우클릭 메뉴 세 가지**: 항목 위 → 항목 메뉴(Canvas), 선택 영역 있음 → 영역 메뉴(Canvas),
+  빈 곳 → `Canvas::menuRequested` 로 편집 창이 띄우는 도구·도움말 메뉴
+  (전체 선택 · 도구 6개 · 단축키 보기 · 업데이트 확인 · 버전 정보 — 뒤 둘은 신호로 App 에 넘긴다).
+  Windows 는 WM_CONTEXTMENU 가 **버튼을 뗄 때** 오므로, 누를 때 `cancelPending()`
   으로 선택/영역을 지우면 메뉴가 뜰 대상이 사라진다 — `mousePressEvent` 의 오른쪽 버튼은 그냥
   돌려보내고 판단은 전부 `contextMenuEvent` 에서 한다 (항목 위 → 항목 메뉴 / 영역 있음 → 영역 메뉴 /
   그리는 중·입력 중 → 취소). 메뉴 단축키 표기는 `QAction::setShortcut` 대신 `"...\tEnter"` —
@@ -132,8 +136,15 @@ make-dist.ps1 은 없으면 오류를 낸다.
   오른쪽 아래 손잡이 드래그(폭 비율로 px 환산, Mview 방식)가 바로 적용된다. 선택하면 항목의 색·굵기·글자 크기를
   캔버스 현재값으로 가져오고 `colorChanged/lineWidthChanged/textPxChanged` 로 툴바를 맞춘다 (스핀은
   QSignalBlocker 로 되먹임 차단).
-- **편집 창 키**: 툴바 버튼은 `Qt::NoFocus` 라 키 입력이 캔버스로 간다. 도구 단축키 V/R/L/A/T/F 는 QAction
-  (QLineEdit 텍스트 입력 중에는 QLineEdit 가 ShortcutOverride 로 가로채므로 글자가 그대로 입력된다).
+- **편집 창 키**: 툴바 버튼은 `Qt::NoFocus` 라 키 입력이 캔버스로 간다. 도구 단축키(선택 Space · 영역 C ·
+  사각형 M · 밑줄 U · 화살표 Shift+. · 텍스트 T · 채우기 F, Ctrl+A = 영역 도구 + 이미지 전체 선택)는 QAction
+  (QLineEdit 텍스트 입력 중에는 QLineEdit 가 ShortcutOverride 로 가로채므로 글자가 그대로 입력된다 —
+  Space·글자·`>` 모두 `Qt::Key_Escape` 보다 작은 키코드라 QLineEdit 이 먼저 가져간다).
+  **함정: 한 동작에 같은 이벤트로 맞는 조합을 여러 개 걸면 안 된다** — 화살표에 `Shift+.` 과 `>` 를 함께
+  등록했더니 Qt 가 "모호한 단축키" 로 보고 키는 먹은 채 아무것도 실행하지 않았다(실측). `Shift+.` 하나만 등록.
+- **F1 단축키 치트시트**(`HelpDialog`): 부모 창을 덮는 프레임 없는 반투명 모달. **그냥 띄우면 활성 창이
+  되지 않아 Esc 가 안 먹는다** — `showEvent` 에서 `raise()+activateWindow()+setFocus()` 를 직접 호출한다.
+  패널(760px)이 창보다 크면 창 밖으로 넓혀서 화면 안에 맞춘다 (작은 캡처는 창이 760×440 라 세로가 모자람).
   `Esc` 는 텍스트 취소 → 선택 해제 → 창 닫기 순(`Canvas::cancelPending`).
 - **자동 복사 + 감시 충돌**: 캡처 직후 `setImage` 뒤 곧바로 `ignoreCurrent()` — 순서가 바뀌면 자기 캡처를
   다시 연다.
@@ -147,9 +158,10 @@ make-dist.ps1 은 없으면 오류를 낸다.
 - **v1.1.0** (2026-09-21 구현) — 2차 피드백: ① 기본 드래그를 사각 선택 영역으로 바꾸고 우클릭 메뉴
   (자르기·색 채우기·테두리 추가·선택 지우기) ② 텍스트 기본 테두리 제거 + 항목 우클릭 메뉴
   (테두리·색 변경·텍스트 수정·삭제). Mview 자르기 UX 를 그대로 잇는 게 요구사항이었다.
+  ③ 단축키 재배치(Space/C/M/U/Shift+./T/F, Ctrl+F 폴더, Ctrl+Shift+Z 다시 실행) + F1 치트시트.
   Windows 실검증(스크린샷): 툴바 기본 도구 `영역`, 마퀴·배지, 영역 메뉴 4개 항목, 테두리 추가,
   Enter 자르기(350×200, 창 위치 유지) → Ctrl+Z 로 600×400 복원, 텍스트 외곽선 없이 입력 → 우클릭
-  `테두리` 로 켜기, 색 채우기, Esc 선택 지우기.
+  `테두리` 로 켜기, 색 채우기, Esc 선택 지우기, F1 치트시트 열고 Esc 로 닫기, Space/M/U/Shift+. 도구 전환.
 
 - v1.0.0 (2026-09-20 구현, **2026-09-21 릴리스** — GitHub Release v1.0.0 에 win zip·mac dmg·mac zip, NAS 에 `version.txt`/`version-mac.txt` 업로드 완료, 자동 업데이트 채널 개통) — 첫 구현. 1차 피드백 반영: 텍스트 확정 후 크기 조절(휠·손잡이·스핀),
   클릭 직후 드래그 시 전체+선택 두 창 문제(더블클릭 제거), 자기 복사본 중복 열기 방지(ignoreCurrent 에 이미지 전달),

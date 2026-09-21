@@ -243,6 +243,11 @@ void App::openEditor(const QImage &img, bool fromCapture) {
     auto *w = new EditorWindow(m_settings, img);
     connect(w, &EditorWindow::copiedToClipboard, m_watch, [this](const QImage &img) { m_watch->ignoreCurrent(img); });
     connect(w, &EditorWindow::settingsRequested, this, &App::showSettings);
+    connect(w, &EditorWindow::updateCheckRequested, this, [this] {
+        if (m_updater)
+            m_updater->check(true);
+    });
+    connect(w, &EditorWindow::aboutRequested, this, &App::showAbout);
     if (!fromCapture) {
         m_lastClipWin = w;
         m_lastClipTime.restart();

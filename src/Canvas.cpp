@@ -421,6 +421,20 @@ void Canvas::clearRegion() {
     update();
 }
 
+// Ctrl+A — 이미지 전체를 선택 영역으로 (도구 전환은 편집 창이 한다)
+void Canvas::selectAllRegion() {
+    if (m_img.isNull())
+        return;
+    finishTextEdit();
+    select(-1);
+    m_rgA = QPointF(0, 0);
+    m_rgB = QPointF(m_img.width(), m_img.height());
+    m_hasRegion = true;
+    m_regionDrag = m_regionMove = false;
+    syncMarquee();
+    update();
+}
+
 // 선택 영역대로 이미지를 자른다 — 항목은 좌표만 옮겨 그대로 편집할 수 있다 (되돌리기 가능)
 void Canvas::cropToRegion() {
     if (!m_hasRegion || m_img.isNull())
@@ -551,9 +565,8 @@ void Canvas::contextMenuEvent(QContextMenuEvent *e) {
         showItemMenu(idx, e->globalPos());
     } else if (m_hasRegion) {
         showRegionMenu(e->globalPos());
-    } else if (!cancelPending()) {
-        e->ignore();
-        return;
+    } else {
+        emit menuRequested(e->globalPos());   // 빈 곳: 도구·도움말 메뉴
     }
     e->accept();
 }

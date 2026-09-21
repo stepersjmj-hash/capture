@@ -21,6 +21,8 @@ add_executable(mcapture
     src/ClipboardWatch.h
     src/EditorWindow.cpp
     src/EditorWindow.h
+    src/HelpDialog.cpp
+    src/HelpDialog.h
     src/HotKey.cpp
     src/HotKey.h
     src/Icons.h

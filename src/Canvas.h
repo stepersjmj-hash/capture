@@ -34,6 +34,7 @@ public:
 
     // 선택 영역(마퀴) — Region 도구. 우클릭 메뉴/Enter 로 자르기·채우기·테두리.
     bool hasRegion() const { return m_hasRegion; }
+    void selectAllRegion();              // 이미지 전체를 선택 영역으로 (Ctrl+A)
     void cropToRegion();
     void fillRegion();
     void borderRegion();
@@ -64,6 +65,7 @@ signals:
     void colorChanged(const QColor &c);
     void imageResized(const QSize &size);   // 자르기/되돌리기로 이미지 크기가 바뀜
     void colorPickRequested();              // 우클릭 "색 변경…" — 창이 색 대화상자를 연다
+    void menuRequested(const QPoint &globalPos);   // 빈 곳 우클릭 — 도구·도움말 메뉴 (편집 창이 띄운다)
 
 protected:
     void paintEvent(QPaintEvent *) override;

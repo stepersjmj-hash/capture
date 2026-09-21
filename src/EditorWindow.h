@@ -26,6 +26,8 @@ public:
 signals:
     void copiedToClipboard(const QImage &image);   // 클립보드 감시가 우리 복사를 새 캡처로 오인하지 않게
     void settingsRequested();
+    void updateCheckRequested();   // 우클릭 메뉴 → App 이 Updater 로 확인
+    void aboutRequested();
 
 protected:
     void closeEvent(QCloseEvent *e) override;
@@ -45,6 +47,9 @@ private:
     void saveAs();
     void openFolder();
     void onEscape();
+    void showHelp();                     // F1 단축키 치트시트
+    void showCanvasMenu(const QPoint &globalPos);   // 캔버스 빈 곳 우클릭 메뉴
+    void selectAll();                    // Ctrl+A — 영역 도구 + 이미지 전체
     QString saveDir() const;
     QString uniquePath(const QString &dir, const QString &ext) const;
     void flash(const QString &msg);
