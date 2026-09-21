@@ -31,6 +31,7 @@ signals:
 
 protected:
     void closeEvent(QCloseEvent *e) override;
+    void keyPressEvent(QKeyEvent *e) override;   // macOS: 한글 입력 소스에서도 도구 글자 키가 먹게
 
 private:
     QWidget *buildToolbar();

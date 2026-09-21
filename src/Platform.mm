@@ -73,6 +73,21 @@ static int macKeyCode(int key) {
     }
 }
 
+int keyForVirtualKey(quint32 vk) {
+    static const int keys[] = {
+        Qt::Key_A, Qt::Key_B, Qt::Key_C, Qt::Key_D, Qt::Key_E, Qt::Key_F, Qt::Key_G, Qt::Key_H, Qt::Key_I,
+        Qt::Key_J, Qt::Key_K, Qt::Key_L, Qt::Key_M, Qt::Key_N, Qt::Key_O, Qt::Key_P, Qt::Key_Q, Qt::Key_R,
+        Qt::Key_S, Qt::Key_T, Qt::Key_U, Qt::Key_V, Qt::Key_W, Qt::Key_X, Qt::Key_Y, Qt::Key_Z,
+        Qt::Key_0, Qt::Key_1, Qt::Key_2, Qt::Key_3, Qt::Key_4, Qt::Key_5, Qt::Key_6, Qt::Key_7, Qt::Key_8, Qt::Key_9,
+        Qt::Key_Space, Qt::Key_Minus, Qt::Key_Equal, Qt::Key_BracketLeft, Qt::Key_BracketRight, Qt::Key_Semicolon,
+        Qt::Key_Apostrophe, Qt::Key_Comma, Qt::Key_Period, Qt::Key_Slash, Qt::Key_Backslash, Qt::Key_QuoteLeft,
+    };
+    for (int k : keys)
+        if (macKeyCode(k) == int(vk))
+            return k;
+    return 0;
+}
+
 static void (*s_callback)(int) = nullptr;
 static EventHandlerRef s_handler = nullptr;
 

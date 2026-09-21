@@ -24,9 +24,11 @@ src/HelpDialog.*      단축키 치트시트 (F1) — Mview 단축키 오버레�
 src/SettingsDialog.*  설정 대화상자 (QSettings 에 쓰기만; 적용은 App::applySettings)
 src/Updater.*         NAS 자동 업데이트 (mplayer 에서 이식, 이름만 변경)
 src/Theme.h / Icons.h 디자인 토큰(Mview 차콜+앰버) QSS / Material Icons 글리프 → QIcon
+src/Keys.h            단축키 표기 도우미 — 코드는 "Ctrl+Z", 화면은 플랫폼 표기(Win "Ctrl+Z" / mac "⌘Z", Del/⌫)
 src/Platform.h/.mm    macOS 전용 네이티브 (pasteboard changeCount, 오버레이 창 레벨, Carbon 단축키) — Win 빌드 제외
 assets/               app.svg(아이콘 마스터) → app.ico/app.icns(생성물, 추적됨), fonts/(Material Icons Outlined)
 scripts/test/         UI 자동 검증용 PowerShell (winshot·mouse·keys·winmove — 아래 "화면 검증")
+scripts/test/mac/     macOS 검증용 (input.swift CGEvent 키·드래그, is.swift 입력 소스 — 아래 "macOS 검증")
 make-dist.ps1 / make-dist-mac.sh / release.ps1 / release-mac.sh / .github/workflows/build.yml — mplayer 와 동일 구조
 ```
 
@@ -74,6 +76,21 @@ make-dist.ps1 은 없으면 오류를 낸다.
 5. 클립보드 감시 검증: `powershell -STA -Command "[System.Windows.Forms.Clipboard]::SetImage(비트맵)"` →
    3초 안에 `Mcapture — 300 × 200` 창이 **하나만** 떠야 한다.
 6. 검증 스크린샷은 사용자 화면 내용이 찍히므로 scratchpad 에만 두고 끝나면 지운다.
+
+### macOS 검증 (이 Mac 에서 빌드·실검증 가능 — 2026-09-21 처음 수행)
+
+```bash
+cmake -B build-mac -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" && cmake --build build-mac -j
+build-mac/Mcapture.app/Contents/MacOS/Mcapture --quit   # 떠 있는 인스턴스 IPC 종료 (사용자 설치본은 /Users/mj/MJ/Mcapture.app)
+open build-mac/Mcapture.app
+```
+- 키·마우스는 `scripts/test/mac/input`(CGEvent)으로 보낸다. **`osascript` 의 `keystroke` 는 Qt 창에 안 들어간다**
+  (앞에 있어도 무반응 — 실측). 앞에 있는 앱은 `lsappinfo front` 로 본다 — System Events 의 `frontmost` 는
+  LSUIElement 앱에 false 로 나온다. 툴바 도구 상태는 AX 로 읽힌다 (`checkboxes 1 thru 7 of window 1` 값).
+- 진단 로그는 `$TMPDIR/Mcapture.log`. 자세한 절차는 `scripts/test/mac/README.md`.
+- 전역 단축키(Carbon)·오버레이 드래그·편집 창 활성화는 macOS 26 에서 실측 정상. **입력 소스가 한글이면 글자
+  단축키가 자모로 와서 QAction 이 안 맞는다** → `EditorWindow::keyPressEvent` 가 가상 키코드로 다시 본다
+  (아래 "설계 메모"). 입력 소스 전환(`is set …`)은 새 편집 창을 열어야 반영된다.
 
 ### 배포
 
@@ -136,8 +153,8 @@ make-dist.ps1 은 없으면 오류를 낸다.
   오른쪽 아래 손잡이 드래그(폭 비율로 px 환산, Mview 방식)가 바로 적용된다. 선택하면 항목의 색·굵기·글자 크기를
   캔버스 현재값으로 가져오고 `colorChanged/lineWidthChanged/textPxChanged` 로 툴바를 맞춘다 (스핀은
   QSignalBlocker 로 되먹임 차단).
-- **편집 창 키**: 툴바 버튼은 `Qt::NoFocus` 라 키 입력이 캔버스로 간다. 도구 단축키(선택 Space · 영역 C ·
-  사각형 M · 밑줄 U · 화살표 Shift+. · 텍스트 T · 채우기 F, Ctrl+A = 영역 도구 + 이미지 전체 선택)는 QAction
+- **편집 창 키**: 툴바 버튼은 `Qt::NoFocus` 라 키 입력이 캔버스로 간다. 도구 단축키(선택 V·Space · 영역 M ·
+  사각형 S · 밑줄 U · 화살표 Shift+. · 텍스트 T · 채우기 F, Ctrl+A = 영역 도구 + 이미지 전체 선택)는 QAction
   (QLineEdit 텍스트 입력 중에는 QLineEdit 가 ShortcutOverride 로 가로채므로 글자가 그대로 입력된다 —
   Space·글자·`>` 모두 `Qt::Key_Escape` 보다 작은 키코드라 QLineEdit 이 먼저 가져간다).
   **함정: 한 동작에 같은 이벤트로 맞는 조합을 여러 개 걸면 안 된다** — 화살표에 `Shift+.` 과 `>` 를 함께
@@ -148,6 +165,12 @@ make-dist.ps1 은 없으면 오류를 낸다.
   `Esc` 는 텍스트 취소 → 선택 해제 → 창 닫기 순(`Canvas::cancelPending`).
 - **자동 복사 + 감시 충돌**: 캡처 직후 `setImage` 뒤 곧바로 `ignoreCurrent()` — 순서가 바뀌면 자기 캡처를
   다시 연다.
+- **macOS 한글 입력 소스와 글자 단축키**: 2벌식이 켜져 있으면 `M` 키가 `Qt::Key` 0x3161(ㅡ)·text "ㅡ" 로
+  와서 `QKeySequence("M")` QAction 이 맞지 않는다(⌘ 조합은 macOS 가 라틴으로 넘겨 정상). 사용자 피드백
+  "mac 에서 단축키가 안 먹음" 의 원인. `EditorWindow::keyPressEvent`(mac 전용)가 `nativeVirtualKey()` →
+  `Platform::keyForVirtualKey` 로 물리 키를 보고 도구를 고른다 — 수식 키 없는 글자(화살표만 Shift)만,
+  `key() != 물리 키` 일 때만(라틴 배열에서는 QAction 이 먼저 먹어 여기까지 안 온다). 텍스트 입력 중에는
+  QLineEdit 이 키를 가져가 여기로 안 온다. 화면 표기는 `Keys::label("Ctrl+Z")` → mac "⌘Z".
 - **macOS 는 이 PC 에서 컴파일 불가** — `Platform.mm`(Carbon 단축키·NSPasteboard changeCount·오버레이
   `NSScreenSaverWindowLevel`), `LSUIElement`(Dock 숨김), 화면 기록 권한 흐름은 CI 컴파일만 거쳤고 실기기
   검증 대기. Qt 는 mac 에서 Ctrl↔Cmd 를 맞바꾸므로 기본 단축키 문자열은 `Meta+Shift+Ctrl+S` (= ⌃⇧⌘S).
@@ -155,11 +178,17 @@ make-dist.ps1 은 없으면 오류를 낸다.
 
 ## 현재 상태
 
+- **v1.1.1** (2026-09-21 구현, 릴리스 전) — mac 피드백 "단축키가 적용 안 됨": 전역 단축키·오버레이·편집 창
+  활성화는 정상이었고, 원인은 **한글 입력 소스에서 도구 글자 키(C/M/U/T/F)가 자모로 와서 무반응** + 툴팁·
+  F1 이 `Ctrl+…` 로 적혀 있던 것. 물리 키 대비책 + `Keys.h` 플랫폼 표기. 3차 피드백: 도구 키 선택 V · 영역 M · 사각형 S, 트레이·우클릭 메뉴 정보 항목에 버전 표기. Mac(macOS 26, Homebrew Qt) 실검증:
+  한글 입력 상태에서 V/M/S/U/T/F/Space/Shift+. 도구 전환, 툴팁 `⌘S`, ⌘W 닫기. Windows 는 재빌드만 필요
+  (mac 전용 분기 + 표기 도우미).
+
 - **v1.1.0** (2026-09-21 구현·**릴리스** — GitHub Release v1.1.0 에 win zip·mac dmg·mac zip,
   NAS 에 `version.txt`/`version-mac.txt` 갱신 완료) — 2차 피드백: ① 기본 드래그를 사각 선택 영역으로 바꾸고 우클릭 메뉴
   (자르기·색 채우기·테두리 추가·선택 지우기) ② 텍스트 기본 테두리 제거 + 항목 우클릭 메뉴
   (테두리·색 변경·텍스트 수정·삭제). Mview 자르기 UX 를 그대로 잇는 게 요구사항이었다.
-  ③ 단축키 재배치(Space/C/M/U/Shift+./T/F, Ctrl+F 폴더, Ctrl+Shift+Z 다시 실행) + F1 치트시트.
+  ③ 단축키 재배치(v1.1.1 에서 V/M/S 로 다시 바꿈: Space/C/M/U/Shift+./T/F, Ctrl+F 폴더, Ctrl+Shift+Z 다시 실행) + F1 치트시트.
   Windows 실검증(스크린샷): 툴바 기본 도구 `영역`, 마퀴·배지, 영역 메뉴 4개 항목, 테두리 추가,
   Enter 자르기(350×200, 창 위치 유지) → Ctrl+Z 로 600×400 복원, 텍스트 외곽선 없이 입력 → 우클릭
   `테두리` 로 켜기, 색 채우기, Esc 선택 지우기, F1 치트시트 열고 Esc 로 닫기, Space/M/U/Shift+. 도구 전환.

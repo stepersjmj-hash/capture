@@ -3,6 +3,9 @@
 #include "Defaults.h"
 #include "HelpDialog.h"
 #include "Icons.h"
+#include "Keys.h"
+#include "Log.h"
+#include "Platform.h"
 #include "Theme.h"
 
 #include <QAction>
@@ -18,6 +21,7 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
@@ -133,9 +137,9 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
     // 도구 키 — 화살표는 Shift+. 하나만 등록한다. 같은 이벤트에 맞는 조합("Shift+." 과 ">")을
     // 함께 걸면 Qt 가 "모호한 단축키" 로 보고 **아무것도 실행하지 않는다** (실측: 키만 먹히고 무반응).
     const struct { QList<QKeySequence> keys; Tool tool; } toolKeys[] = {
-        {{QKeySequence(Qt::Key_Space)}, Tool::Select},
-        {{QKeySequence(Qt::Key_C)}, Tool::Region},
-        {{QKeySequence(Qt::Key_M)}, Tool::Rect},
+        {{QKeySequence(Qt::Key_V), QKeySequence(Qt::Key_Space)}, Tool::Select},
+        {{QKeySequence(Qt::Key_M)}, Tool::Region},
+        {{QKeySequence(Qt::Key_S)}, Tool::Rect},
         {{QKeySequence(Qt::Key_U)}, Tool::Line},
         {{QKeySequence("Shift+.")}, Tool::Arrow},
         {{QKeySequence(Qt::Key_T)}, Tool::Text},
@@ -225,17 +229,18 @@ QWidget *EditorWindow::buildToolbar() {
     m_tools = new QButtonGroup(this);
     m_tools->setExclusive(true);
     const struct { Tool tool; char16_t glyph; const char *label; const char *tip; } defs[] = {
-        {Tool::Select, Icons::kSelect, "선택", "선택 (Space) — 클릭으로 고르고 드래그로 이동, 우클릭 메뉴"},
+        {Tool::Select, Icons::kSelect, "선택", "선택 (V · Space) — 클릭으로 고르고 드래그로 이동, 우클릭 메뉴"},
         {Tool::Region, Icons::kCrop, "영역",
-         "영역 선택 (C) — 드래그 후 우클릭: 자르기 · 색 채우기 · 테두리 (Ctrl+A 전체 선택)"},
-        {Tool::Rect, Icons::kRect, "사각형", "사각형 (M)"},
+         "영역 선택 (M) — 드래그 후 우클릭: 자르기 · 색 채우기 · 테두리 (%1 전체 선택)"},
+        {Tool::Rect, Icons::kRect, "사각형", "사각형 (S)"},
         {Tool::Line, Icons::kLine, "밑줄", "밑줄 (U)"},
         {Tool::Arrow, Icons::kArrow, "화살표", "화살표 (Shift+.)"},
         {Tool::Text, Icons::kText, "텍스트", "텍스트 (T) — 확정 후 우클릭으로 테두리·색 변경"},
         {Tool::Fill, Icons::kFill, "채우기", "채우기 (F)"},
     };
     for (const auto &d : defs) {
-        QToolButton *b = toolButton(d.glyph, QString::fromUtf8(d.label), QString::fromUtf8(d.tip), true);
+        QToolButton *b = toolButton(d.glyph, QString::fromUtf8(d.label),
+                                    QString::fromUtf8(d.tip).replace("%1", Keys::label("Ctrl+A")), true);
         m_tools->addButton(b, int(d.tool));
         h->addWidget(b);
     }
@@ -299,8 +304,8 @@ QWidget *EditorWindow::buildToolbar() {
     h->addWidget(makeSep(row));
 
     // 되돌리기 · 삭제
-    m_undoBtn = toolButton(Icons::kUndo, "되돌리기", "되돌리기 (Ctrl+Z)", false);
-    m_redoBtn = toolButton(Icons::kRedo, "다시실행", "다시 실행 (Ctrl+Shift+Z)", false);
+    m_undoBtn = toolButton(Icons::kUndo, "되돌리기", QString("되돌리기 (%1)").arg(Keys::label("Ctrl+Z")), false);
+    m_redoBtn = toolButton(Icons::kRedo, "다시실행", QString("다시 실행 (%1)").arg(Keys::label("Ctrl+Shift+Z")), false);
     m_delBtn = toolButton(Icons::kDelete, "삭제", "선택한 항목 삭제 (Delete)", false);
     connect(m_undoBtn, &QToolButton::clicked, this, [this] { m_canvas->undo(); });
     connect(m_redoBtn, &QToolButton::clicked, this, [this] { m_canvas->redo(); });
@@ -311,10 +316,10 @@ QWidget *EditorWindow::buildToolbar() {
     h->addStretch(1);
 
     // 내보내기
-    auto *copyBtn = toolButton(Icons::kCopy, "복사", "클립보드에 복사 (Ctrl+C)", false);
-    auto *saveBtn = toolButton(Icons::kSave, "저장", "저장 폴더에 PNG 로 저장 (Ctrl+S)", false);
-    auto *saveAsBtn = toolButton(Icons::kSaveAs, "다른이름", "다른 이름으로 저장 (Ctrl+Shift+S)", false);
-    m_folderBtn = toolButton(Icons::kFolder, "폴더", "저장 폴더 열기 (Ctrl+F)", false);
+    auto *copyBtn = toolButton(Icons::kCopy, "복사", QString("클립보드에 복사 (%1)").arg(Keys::label("Ctrl+C")), false);
+    auto *saveBtn = toolButton(Icons::kSave, "저장", QString("저장 폴더에 PNG 로 저장 (%1)").arg(Keys::label("Ctrl+S")), false);
+    auto *saveAsBtn = toolButton(Icons::kSaveAs, "다른이름", QString("다른 이름으로 저장 (%1)").arg(Keys::label("Ctrl+Shift+S")), false);
+    m_folderBtn = toolButton(Icons::kFolder, "폴더", QString("저장 폴더 열기 (%1)").arg(Keys::label("Ctrl+F")), false);
     auto *settingsBtn = toolButton(Icons::kSettings, "설정", "단축키·저장 폴더 등 설정", false);
     connect(copyBtn, &QToolButton::clicked, this, [this] { copyImage(); });
     connect(saveBtn, &QToolButton::clicked, this, [this] { save(); });
@@ -460,11 +465,11 @@ void EditorWindow::selectAll() {
 // (항목 위/선택 영역 안에서는 Canvas 가 그 대상에 맞는 메뉴를 띄운다)
 void EditorWindow::showCanvasMenu(const QPoint &globalPos) {
     QMenu menu(this);
-    QAction *all = menu.addAction(QStringLiteral("전체 선택\tCtrl+A"));
+    QAction *all = menu.addAction(QStringLiteral("전체 선택\t") + Keys::label("Ctrl+A"));
     menu.addSeparator();
 
     const struct { Tool tool; const char *label; const char *key; } tools[] = {
-        {Tool::Region, "영역 선택", "C"}, {Tool::Rect, "사각형", "M"},    {Tool::Line, "밑줄", "U"},
+        {Tool::Region, "영역 선택", "M"}, {Tool::Rect, "사각형", "S"},    {Tool::Line, "밑줄", "U"},
         {Tool::Arrow, "화살표", "Shift+."}, {Tool::Text, "텍스트", "T"},  {Tool::Fill, "채우기", "F"},
     };
     QList<QAction *> toolActs;
@@ -477,7 +482,7 @@ void EditorWindow::showCanvasMenu(const QPoint &globalPos) {
     menu.addSeparator();
     QAction *help = menu.addAction(QStringLiteral("단축키 보기\tF1"));
     QAction *upd = menu.addAction(QStringLiteral("업데이트 확인"));
-    QAction *about = menu.addAction(QStringLiteral("Mcapture 버전 정보"));
+    QAction *about = menu.addAction(QStringLiteral("Mcapture v" APP_VERSION " 정보"));
 
     const QAction *picked = menu.exec(globalPos);
     if (!picked)
@@ -503,37 +508,73 @@ void EditorWindow::showHelp() {
     m_canvas->finishTextEdit();
     const QList<HelpDialog::Group> colA = {
         {"도구",
-         {{"선택", "Space"},
-          {"영역", "C"},
-          {"사각형", "M"},
+         {{"선택", "V · Space"},
+          {"영역", "M"},
+          {"사각형", "S"},
           {"밑줄", "U"},
           {"화살표", "Shift+."},
           {"텍스트", "T"},
           {"채우기", "F"}}},
         {"선택 영역",
-         {{"전체 선택", "Ctrl+A"},
+         {{"전체 선택", Keys::label("Ctrl+A")},
           {"이 영역으로 자르기", "Enter"},
           {"정사각형으로 선택", "Shift+드래그"},
           {"선택 지우기", "Esc"}}},
     };
     const QList<HelpDialog::Group> colB = {
         {"편집",
-         {{"되돌리기", "Ctrl+Z"},
-          {"다시 실행", "Ctrl+Shift+Z"},
-          {"삭제", "Del"},
+         {{"되돌리기", Keys::label("Ctrl+Z")},
+          {"다시 실행", Keys::label("Ctrl+Shift+Z")},
+          {"삭제", Keys::del()},
           {"1px · 10px 이동", "방향키 · Shift"},
           {"크기 · 굵기", "휠"},
           {"항목 메뉴", "우클릭"}}},
         {"파일",
-         {{"복사", "Ctrl+C"},
-          {"저장", "Ctrl+S"},
-          {"다른 이름으로 저장", "Ctrl+Shift+S"},
-          {"폴더 열기", "Ctrl+F"},
+         {{"복사", Keys::label("Ctrl+C")},
+          {"저장", Keys::label("Ctrl+S")},
+          {"다른 이름으로 저장", Keys::label("Ctrl+Shift+S")},
+          {"폴더 열기", Keys::label("Ctrl+F")},
           {"단축키 보기", "F1"},
-          {"닫기", "Esc · Ctrl+W"}}},
+          {"닫기", "Esc · " + Keys::label("Ctrl+W")}}},
     };
     HelpDialog dlg(this, colA, colB);
     dlg.exec();
+}
+
+// 도구 글자 키의 물리 키 대비책 (macOS). 한글 등 라틴이 아닌 입력 소스가 켜져 있으면 키 이벤트의
+// key() 가 자모(ㅊ·ㅡ…)로 와서 QAction 단축키 "M"·"S" 가 맞지 않는다(실측: 2벌식에서 글자 키 무반응).
+// ⌘ 조합은 macOS 가 라틴 문자로 넘겨 주므로 QAction 이 그대로 맞고, 여기서는 수식 키 없는(화살표만
+// Shift) 글자 키만 가상 키코드로 다시 본다. 라틴 배열에서는 QAction 이 먼저 먹어 여기까지 오지 않는다.
+void EditorWindow::keyPressEvent(QKeyEvent *e) {
+#ifdef Q_OS_MACOS
+    const Qt::KeyboardModifiers mods =
+        e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier | Qt::ShiftModifier);
+    const bool shift = mods == Qt::ShiftModifier;
+    if (mods == Qt::NoModifier || shift) {
+        const int key = Platform::keyForVirtualKey(e->nativeVirtualKey());
+        Tool tool = Tool::Select;
+        bool hit = key != 0 && key != e->key();
+        switch (key) {
+        case Qt::Key_Space: tool = Tool::Select; hit = hit && !shift; break;
+        case Qt::Key_V: tool = Tool::Select; hit = hit && !shift; break;
+        case Qt::Key_M: tool = Tool::Region; hit = hit && !shift; break;
+        case Qt::Key_S: tool = Tool::Rect; hit = hit && !shift; break;
+        case Qt::Key_U: tool = Tool::Line; hit = hit && !shift; break;
+        case Qt::Key_Period: tool = Tool::Arrow; hit = hit && shift; break;
+        case Qt::Key_T: tool = Tool::Text; hit = hit && !shift; break;
+        case Qt::Key_F: tool = Tool::Fill; hit = hit && !shift; break;
+        default: hit = false;
+        }
+        if (hit) {
+            mlog(QString("tool key via virtual key %1 -> %2").arg(e->nativeVirtualKey()).arg(int(tool)));
+            if (auto *b = m_tools->button(int(tool)))
+                b->click();
+            e->accept();
+            return;
+        }
+    }
+#endif
+    QMainWindow::keyPressEvent(e);
 }
 
 void EditorWindow::onEscape() {

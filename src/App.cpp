@@ -76,7 +76,7 @@ void App::buildTray() {
     m_actAutoUpdate = m_menu->addAction("시작할 때 자동으로 업데이트 확인");
     m_actAutoUpdate->setCheckable(true);
     connect(m_actAutoUpdate, &QAction::toggled, this, [this](bool on) { m_updater->setAuto(on); });
-    m_menu->addAction(Icons::glyph(Icons::kInfo), "Mcapture 정보", this, &App::showAbout);
+    m_menu->addAction(Icons::glyph(Icons::kInfo), QString("Mcapture v%1 정보").arg(APP_VERSION), this, &App::showAbout);
     m_menu->addSeparator();
     m_menu->addAction(Icons::glyph(Icons::kPower), "종료", qApp, &QCoreApplication::quit);
 

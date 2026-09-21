@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Mcapture VERSION 1.1.0 LANGUAGES CXX)
+project(Mcapture VERSION 1.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
@@ -26,6 +26,7 @@ add_executable(mcapture
     src/HotKey.cpp
     src/HotKey.h
     src/Icons.h
+    src/Keys.h
     src/Log.h
     src/Platform.h
     src/SettingsDialog.cpp
