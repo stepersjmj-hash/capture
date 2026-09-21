@@ -105,6 +105,10 @@ open build-mac/Mcapture.app
    태그 + GitHub Release + **NAS 업로드**(`\\mjj\web\site\mjimage\MJ_data\Mcapture` 에 zip + `version.txt`).
    태그 푸시로 CI 가 win zip·mac dmg·mac zip 을 릴리스에 첨부하고, release.ps1 이 CI 를 기다려 mac zip 을
    NAS 에 `version-mac.txt` 와 함께 올린다 (`-SkipMac` 이면 생략, 나중에 재실행하면 이어서 함).
+   **Mac 에서만 릴리스할 때**(v1.1.1 에서 실행): 커밋·푸시 → `git tag -a vX -m vX && git push origin vX` →
+   `gh run watch` 로 CI 완료 → `gh release download vX --pattern '*.zip'` → 두 zip 을 `/Volumes/web/site/mjimage/MJ_data/Mcapture/`
+   에 복사하고 `printf 'X\r\nMcapture-X-win.zip\r\n' > version.txt`(mac 은 version-mac.txt) — release.ps1 과 같은 형식(CRLF, BOM 없음).
+   NAS 는 `osascript -e 'mount volume "smb://mjj/web"'`, 옵시디언은 `smb://mjj/기타`. make-dist-mac.sh 는 `bash ./make-dist-mac.sh`(실행 비트 없음).
    Updater 의 기본 URL 은 `https://stepersjmj.synology.me:28443/mjimage/MJ_data/Mcapture` (`update/url` 로 재지정 가능).
 5. 옵시디언 일지(`_generate.ps1`)·스펙 문서(`프로젝트/capture 스펙.md`) 갱신 (전역 CLAUDE.md 규칙).
 
@@ -178,7 +182,7 @@ open build-mac/Mcapture.app
 
 ## 현재 상태
 
-- **v1.1.1** (2026-09-21 구현, 릴리스 전) — mac 피드백 "단축키가 적용 안 됨": 전역 단축키·오버레이·편집 창
+- **v1.1.1** (2026-09-21 구현·**릴리스** — GitHub Release v1.1.1 에 CI 가 win zip·mac dmg·mac zip 첨부, 이 Mac 에서 CI zip 을 받아 NAS `version.txt`/`version-mac.txt` 갱신. Windows 에서 release.ps1 없이 mac 만으로 릴리스한 첫 사례) — mac 피드백 "단축키가 적용 안 됨": 전역 단축키·오버레이·편집 창
   활성화는 정상이었고, 원인은 **한글 입력 소스에서 도구 글자 키(C/M/U/T/F)가 자모로 와서 무반응** + 툴팁·
   F1 이 `Ctrl+…` 로 적혀 있던 것. 물리 키 대비책 + `Keys.h` 플랫폼 표기. 3차 피드백: 도구 키 선택 V · 영역 M · 사각형 S, 트레이·우클릭 메뉴 정보 항목에 버전 표기. Mac(macOS 26, Homebrew Qt) 실검증:
   한글 입력 상태에서 V/M/S/U/T/F/Space/Shift+. 도구 전환, 툴팁 `⌘S`, ⌘W 닫기. Windows 는 재빌드만 필요
