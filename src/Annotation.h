@@ -15,7 +15,8 @@
 #include <QString>
 #include <QtMath>
 
-enum class Tool { Select, Rect, Line, Arrow, Text, Fill };
+// Region 은 화면 위 선택 영역(마퀴)만 다루는 도구라 Item 으로 저장되지 않는다.
+enum class Tool { Select, Region, Rect, Line, Arrow, Text, Fill };
 
 struct Item {
     Tool type = Tool::Rect;
@@ -24,6 +25,7 @@ struct Item {
     int width = 3;       // 선 굵기 (이미지 픽셀)
     QString text;
     int textPx = 28;     // 글자 크기 (이미지 픽셀)
+    bool outline = false;   // 텍스트 어두운 외곽선 (기본 없음 — 우클릭으로 켠다)
 
     QRectF rect() const { return QRectF(p1, p2).normalized(); }
     void move(const QPointF &d) { p1 += d; p2 += d; }
@@ -105,17 +107,21 @@ inline void paint(QPainter &p, const Item &it) {
         const qreal pad = textPad(it);
         QPainterPath path;
         path.addText(it.p1.x() + pad, it.p1.y() + pad + fm.ascent(), f, it.text);
-        // 굵은 글꼴 + 어두운 외곽선 — 밝은 배경에서도 읽히게 (Mview 편집 도구와 같은 방식)
-        QPen outline(QColor(0, 0, 0, 200), qMax(1.0, it.textPx / 12.0), Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-        p.setPen(outline);
-        p.setBrush(Qt::NoBrush);
-        p.drawPath(path);
+        // 외곽선은 선택 사항 — 켜면 밝은 배경에서도 읽힌다 (우클릭 "테두리 추가")
+        if (it.outline) {
+            QPen outline(QColor(0, 0, 0, 200), qMax(1.0, it.textPx / 12.0), Qt::SolidLine, Qt::RoundCap,
+                         Qt::RoundJoin);
+            p.setPen(outline);
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(path);
+        }
         p.setPen(Qt::NoPen);
         p.setBrush(it.color);
         p.drawPath(path);
         break;
     }
     case Tool::Select:
+    case Tool::Region:
         break;
     }
 }
@@ -148,7 +154,8 @@ inline bool hit(const Item &it, const QPointF &pt, qreal tol) {
     case Tool::Line:
     case Tool::Arrow: return distToSegment(pt, it.p1, it.p2) <= it.width / 2.0 + tol;
     case Tool::Text: return textRect(it).adjusted(-tol, -tol, tol, tol).contains(pt);
-    case Tool::Select: return false;
+    case Tool::Select:
+    case Tool::Region: return false;
     }
     return false;
 }

@@ -7,9 +7,11 @@
 #include <QImage>
 #include <QList>
 #include <QPixmap>
+#include <QRectF>
 #include <QWidget>
 
 class QLineEdit;
+class QTimer;
 
 class Canvas : public QWidget {
     Q_OBJECT
@@ -28,6 +30,14 @@ public:
     int lineWidth() const { return m_width; }
     void setTextPx(int px);
     int textPx() const { return m_textPx; }
+    void setTextOutline(bool on);        // 선택된 텍스트 + 앞으로 넣을 텍스트의 외곽선
+
+    // 선택 영역(마퀴) — Region 도구. 우클릭 메뉴/Enter 로 자르기·채우기·테두리.
+    bool hasRegion() const { return m_hasRegion; }
+    void cropToRegion();
+    void fillRegion();
+    void borderRegion();
+    void clearRegion();
 
     void undo();
     void redo();
@@ -36,6 +46,7 @@ public:
     void deleteSelected();
     bool hasSelection() const { return m_sel >= 0; }
     bool hasItems() const { return !m_items.isEmpty(); }
+    bool hasContent() const { return !m_items.isEmpty() || m_imageEdited; }   // 저장할 거리가 있나 (자르기 포함)
     int revision() const { return m_rev; }
 
     void finishTextEdit();               // 입력 중인 텍스트를 확정 (저장·복사 전에 호출)
@@ -51,6 +62,8 @@ signals:
     void textPxChanged(int px);
     void lineWidthChanged(int w);
     void colorChanged(const QColor &c);
+    void imageResized(const QSize &size);   // 자르기/되돌리기로 이미지 크기가 바뀜
+    void colorPickRequested();              // 우클릭 "색 변경…" — 창이 색 대화상자를 연다
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -59,6 +72,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;
     void mouseDoubleClickEvent(QMouseEvent *) override;
+    void contextMenuEvent(QContextMenuEvent *) override;
     void keyPressEvent(QKeyEvent *) override;
     void wheelEvent(QWheelEvent *) override;
 
@@ -78,16 +92,34 @@ private:
     QRectF handleRect() const;           // 선택된 텍스트의 크기 조절 손잡이 (위젯 좌표)
     void applyTextPx(int px);
     QString toolHint() const;
+    QRectF regionF() const;              // 정규화된 선택 영역 (이미지 좌표)
+    QPointF clampToImage(const QPointF &p) const;
+    void squareRegion();                 // Shift: 정사각형 보정 (Mview 자르기와 같은 규칙)
+    void syncMarquee();                  // 행진 점선 타이머 켜기/끄기
+    void paintRegion(QPainter &p, const QRectF &dst);
+    void showRegionMenu(const QPoint &globalPos);
+    void showItemMenu(int idx, const QPoint &globalPos);
+
+    // 되돌리기 한 칸 — 이미지도 함께 (자르기). QImage 는 암묵적 공유라 안 바뀐 단계는 사본을 안 만든다.
+    struct Snapshot {
+        QList<Item> items;
+        QImage img;
+        bool imageEdited = false;
+    };
+
+    void restore(const Snapshot &s);     // 되돌리기/다시 실행 공통
 
     QImage m_img;
     QPixmap m_scaled;                    // 현재 배율로 미리 축소한 사본 (마우스 이동마다 재축소 방지)
     QList<Item> m_items;
-    QList<QList<Item>> m_undo, m_redo;
-    Tool m_tool = Tool::Rect;
+    QList<Snapshot> m_undo, m_redo;
+    Tool m_tool = Tool::Region;
     QColor m_color = QColor(0xff, 0x3b, 0x30);
     int m_width = 3;
     int m_textPx = 28;
+    bool m_textOutline = false;          // 새 텍스트의 외곽선 기본값 (우클릭으로 바꾸면 이어짐)
     int m_rev = 0;
+    bool m_imageEdited = false;          // 자르기로 이미지 자체가 바뀌었나
 
     qreal m_scale = 1.0;
     QPointF m_origin;
@@ -101,6 +133,15 @@ private:
     bool m_resizing = false;             // 텍스트 손잡이 드래그 중
     qreal m_rsStartW = 0;
     int m_rsStartPx = 0;
+
+    // 선택 영역
+    bool m_hasRegion = false;
+    bool m_regionDrag = false;
+    bool m_regionMove = false;
+    QPointF m_rgA, m_rgB;                // 앵커 · 현재점 (이미지 좌표)
+    QPointF m_regionGrab;                // 잡은 지점 − 영역 좌상단
+    qreal m_dashPhase = 0;
+    QTimer *m_marquee = nullptr;
 
     QLineEdit *m_edit = nullptr;
     int m_editIndex = -1;                // 기존 텍스트를 고치는 중이면 그 인덱스

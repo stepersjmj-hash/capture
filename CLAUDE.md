@@ -16,8 +16,10 @@ src/HotKey.*          전역 단축키 (Win: RegisterHotKey(NULL)+네이티브 �
 src/ClipboardWatch.*  클립보드 감시 (시퀀스 폴링 + 디바운스 350ms + 같은 이미지 중복 억제)
 src/CaptureOverlay.*  화면별 영역 선택 오버레이(CaptureOverlay) + 세션(RegionCapture) + 전체 화면 grab
 src/EditorWindow.*    편집 창 (툴바·상태바·단축키·복사/저장/닫기 확인)
-src/Canvas.*          캔버스 (배율 맞춤, 그리기/선택/이동, 텍스트 인라인 입력, 되돌리기 100단계)
-src/Annotation.h      항목 모델(Item) + 그리기/히트테스트 (이미지 픽셀 좌표 기준)
+src/Canvas.*          캔버스 (배율 맞춤, 영역 선택 마퀴·자르기, 그리기/선택/이동, 텍스트 인라인 입력,
+                      우클릭 메뉴, 되돌리기 100단계 — 이미지까지 한 칸(Snapshot)이라 자르기도 되돌아간다)
+src/Annotation.h      항목 모델(Item) + 그리기/히트테스트 (이미지 픽셀 좌표 기준). Tool::Region 은
+                      화면 위 선택 영역만 다루는 도구라 Item 으로 저장되지 않는다
 src/SettingsDialog.*  설정 대화상자 (QSettings 에 쓰기만; 적용은 App::applySettings)
 src/Updater.*         NAS 자동 업데이트 (mplayer 에서 이식, 이름만 변경)
 src/Theme.h / Icons.h 디자인 토큰(Mview 차콜+앰버) QSS / Material Icons 글리프 → QIcon
@@ -110,6 +112,22 @@ make-dist.ps1 은 없으면 오류를 낸다.
   (QGuiApplicationPrivate::processMouseEvent). 더블클릭 = 전체 화면으로 두었더니 "전체 + 선택 영역" 창이 함께
   열렸다(사용자 피드백) → 더블클릭 핸들러 제거 + `m_done` 으로 오버레이당 결과 1회. 검증: `mouse.ps1 click` 직후
   `drag` → 창 1개.
+- **선택 영역(Region) = 기본 도구**: Mview 자르기 모드를 그대로 옮겼다 — 바깥 딤 rgba(8,8,10,166),
+  60ms 마다 행진하는 흰 점선(m_dashPhase), 코너 손잡이 10px, 실시간 `W × H px` 배지, Shift 정사각형,
+  안쪽 드래그로 영역 이동, Enter 자르기, Esc 선택 지우기. 도구를 바꾸면 영역은 지워진다.
+  자르기는 `m_img` 를 바꾸고 항목 좌표를 `-topLeft` 만큼 옮긴다(항목은 계속 편집 가능) —
+  되돌리기 한 칸이 `{items, img, imageEdited}` 라 `Ctrl+Z` 로 자르기 전으로 돌아간다. QImage 는
+  암묵적 공유라 이미지가 안 바뀐 단계는 사본을 만들지 않는다. 크기가 바뀌면 `imageResized` 로
+  창 제목·상태바·창 크기를 다시 맞춘다(`fitToImage(size, keepPos=true)` — 위치는 유지).
+  **자르기만 하고 항목이 없어도 "편집됨"** 이어야 하므로 닫기 확인은 `hasItems()` 가 아니라
+  `hasContent()`(= 항목 있음 ‖ imageEdited) 를 본다.
+- **우클릭 메뉴**: Windows 는 WM_CONTEXTMENU 가 **버튼을 뗄 때** 오므로, 누를 때 `cancelPending()`
+  으로 선택/영역을 지우면 메뉴가 뜰 대상이 사라진다 — `mousePressEvent` 의 오른쪽 버튼은 그냥
+  돌려보내고 판단은 전부 `contextMenuEvent` 에서 한다 (항목 위 → 항목 메뉴 / 영역 있음 → 영역 메뉴 /
+  그리는 중·입력 중 → 취소). 메뉴 단축키 표기는 `QAction::setShortcut` 대신 `"...\tEnter"` —
+  setShortcut 은 `Return`·`Del` 로 찍혀 Mview 말투와 어긋난다.
+- **텍스트 테두리**: 기본이 **없음**(`Item::outline=false`). 확정한 텍스트를 우클릭 → `테두리` 로
+  켜고, 그 값이 `m_textOutline` 에 남아 다음에 넣는 텍스트에도 이어진다.
 - **텍스트 크기**: 확정(Enter)하면 그 항목을 **선택 상태**로 둔다(Text 도구에서도 선택 유지) — 글자 스핀·휠(10%)·
   오른쪽 아래 손잡이 드래그(폭 비율로 px 환산, Mview 방식)가 바로 적용된다. 선택하면 항목의 색·굵기·글자 크기를
   캔버스 현재값으로 가져오고 `colorChanged/lineWidthChanged/textPxChanged` 로 툴바를 맞춘다 (스핀은
@@ -126,7 +144,14 @@ make-dist.ps1 은 없으면 오류를 낸다.
 
 ## 현재 상태
 
-- **v1.0.0** (2026-09-20 구현, **2026-09-21 릴리스** — GitHub Release v1.0.0 에 win zip·mac dmg·mac zip, NAS 에 `version.txt`/`version-mac.txt` 업로드 완료, 자동 업데이트 채널 개통) — 첫 구현. 1차 피드백 반영: 텍스트 확정 후 크기 조절(휠·손잡이·스핀),
+- **v1.1.0** (2026-09-21 구현) — 2차 피드백: ① 기본 드래그를 사각 선택 영역으로 바꾸고 우클릭 메뉴
+  (자르기·색 채우기·테두리 추가·선택 지우기) ② 텍스트 기본 테두리 제거 + 항목 우클릭 메뉴
+  (테두리·색 변경·텍스트 수정·삭제). Mview 자르기 UX 를 그대로 잇는 게 요구사항이었다.
+  Windows 실검증(스크린샷): 툴바 기본 도구 `영역`, 마퀴·배지, 영역 메뉴 4개 항목, 테두리 추가,
+  Enter 자르기(350×200, 창 위치 유지) → Ctrl+Z 로 600×400 복원, 텍스트 외곽선 없이 입력 → 우클릭
+  `테두리` 로 켜기, 색 채우기, Esc 선택 지우기.
+
+- v1.0.0 (2026-09-20 구현, **2026-09-21 릴리스** — GitHub Release v1.0.0 에 win zip·mac dmg·mac zip, NAS 에 `version.txt`/`version-mac.txt` 업로드 완료, 자동 업데이트 채널 개통) — 첫 구현. 1차 피드백 반영: 텍스트 확정 후 크기 조절(휠·손잡이·스핀),
   클릭 직후 드래그 시 전체+선택 두 창 문제(더블클릭 제거), 자기 복사본 중복 열기 방지(ignoreCurrent 에 이미지 전달),
   Win+Shift+S 의 전체 화면 선행 복사본 보류/교체(진짜 원인 — 로그로 확인). Windows 실검증: 영역/전체 캡처, 5개 편집 도구, 선택·이동,
   되돌리기, 저장(`사진\Mcapture`), 복사(감시 재진입 없음), 외부 클립보드 이미지 → 창 1개, 닫기 확인.

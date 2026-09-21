@@ -97,6 +97,12 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
         m_width->setValue(w);
     });
     connect(m_canvas, &Canvas::colorChanged, this, [this](const QColor &) { updateChips(); });
+    connect(m_canvas, &Canvas::imageResized, this, [this](const QSize &sz) {
+        m_sizeLabel->setText(QString("%1 × %2").arg(sz.width()).arg(sz.height()));
+        updateTitle();
+        fitToImage(sz, true);   // 자른 뒤에도 창 위치는 그대로
+    });
+    connect(m_canvas, &Canvas::colorPickRequested, this, [this] { pickColor(); });
 
     // 단축키
     auto act = [this](const QList<QKeySequence> &keys, auto fn) {
@@ -115,8 +121,9 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
     act({QKeySequence(Qt::Key_Escape)}, [this] { onEscape(); });
     act({QKeySequence(Qt::Key_Delete), QKeySequence(Qt::Key_Backspace)}, [this] { m_canvas->deleteSelected(); });
     const struct { Qt::Key key; Tool tool; } toolKeys[] = {
-        {Qt::Key_V, Tool::Select}, {Qt::Key_R, Tool::Rect}, {Qt::Key_L, Tool::Line},
-        {Qt::Key_A, Tool::Arrow},  {Qt::Key_T, Tool::Text}, {Qt::Key_F, Tool::Fill},
+        {Qt::Key_V, Tool::Select}, {Qt::Key_S, Tool::Region}, {Qt::Key_R, Tool::Rect},
+        {Qt::Key_L, Tool::Line},   {Qt::Key_A, Tool::Arrow},  {Qt::Key_T, Tool::Text},
+        {Qt::Key_F, Tool::Fill},
     };
     for (const auto &tk : toolKeys)
         act({QKeySequence(tk.key)}, [this, t = tk.tool] {
@@ -124,10 +131,10 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
                 b->click();
         });
 
-    // 기본 도구: 사각형
-    if (auto *b = m_tools->button(int(Tool::Rect)))
+    // 기본 도구: 영역 선택 (드래그 → 우클릭 메뉴)
+    if (auto *b = m_tools->button(int(Tool::Region)))
         b->setChecked(true);
-    m_canvas->setTool(Tool::Rect);
+    m_canvas->setTool(Tool::Region);
     updateChips();
     updateActions();
     updateTitle();
@@ -136,19 +143,34 @@ EditorWindow::EditorWindow(QSettings &settings, const QImage &image, QWidget *pa
 }
 
 // 창 크기: 이미지 원본 크기(+크롬), 화면의 92% 를 넘지 않게. 화면 가운데 배치.
-void EditorWindow::fitToImage(const QSize &imageSize) {
-    QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
-    if (!screen)
-        screen = QGuiApplication::primaryScreen();
-    const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1280, 800);
+// keepPos = 자르기처럼 이미 떠 있는 창의 크기만 다시 맞출 때 (화면 밖으로만 안 나가게).
+void EditorWindow::fitToImage(const QSize &imageSize, bool keepPos) {
+    QScreen *sc = keepPos ? screen() : QGuiApplication::screenAt(QCursor::pos());
+    if (!sc)
+        sc = QGuiApplication::primaryScreen();
+    const QRect avail = sc ? sc->availableGeometry() : QRect(0, 0, 1280, 800);
     QSize want = imageSize + QSize(24, 24 + 74 + 28);
     want.setWidth(qBound(760, want.width(), int(avail.width() * 0.92)));
     want.setHeight(qBound(440, want.height(), int(avail.height() * 0.92)));
+    const QPoint before = pos();
     resize(want);
-    move(avail.center() - QPoint(want.width() / 2, want.height() / 2));
+    if (!keepPos) {
+        move(avail.center() - QPoint(want.width() / 2, want.height() / 2));
+        return;
+    }
+    QRect g(before, want);
+    if (g.right() > avail.right())
+        g.moveRight(avail.right());
+    if (g.bottom() > avail.bottom())
+        g.moveBottom(avail.bottom());
+    if (g.left() < avail.left())
+        g.moveLeft(avail.left());
+    if (g.top() < avail.top())
+        g.moveTop(avail.top());
+    move(g.topLeft());
 }
 
-bool EditorWindow::hasEdits() const { return m_canvas->hasItems() || m_canvas->canUndo(); }
+bool EditorWindow::hasEdits() const { return m_canvas->hasContent() || m_canvas->canUndo(); }
 
 void EditorWindow::replaceImage(const QImage &image) {
     m_canvas->finishTextEdit();
@@ -186,14 +208,17 @@ QWidget *EditorWindow::buildToolbar() {
     // 도구
     m_tools = new QButtonGroup(this);
     m_tools->setExclusive(true);
-    const struct { Tool tool; char16_t glyph; const char *label; const char *key; } defs[] = {
-        {Tool::Select, Icons::kSelect, "선택", "V"},   {Tool::Rect, Icons::kRect, "사각형", "R"},
-        {Tool::Line, Icons::kLine, "밑줄", "L"},       {Tool::Arrow, Icons::kArrow, "화살표", "A"},
-        {Tool::Text, Icons::kText, "텍스트", "T"},     {Tool::Fill, Icons::kFill, "채우기", "F"},
+    const struct { Tool tool; char16_t glyph; const char *label; const char *tip; } defs[] = {
+        {Tool::Select, Icons::kSelect, "선택", "선택 (V) — 클릭으로 고르고 드래그로 이동, 우클릭 메뉴"},
+        {Tool::Region, Icons::kCrop, "영역", "영역 선택 (S) — 드래그 후 우클릭: 자르기 · 색 채우기 · 테두리"},
+        {Tool::Rect, Icons::kRect, "사각형", "사각형 (R)"},
+        {Tool::Line, Icons::kLine, "밑줄", "밑줄 (L)"},
+        {Tool::Arrow, Icons::kArrow, "화살표", "화살표 (A)"},
+        {Tool::Text, Icons::kText, "텍스트", "텍스트 (T) — 확정 후 우클릭으로 테두리·색 변경"},
+        {Tool::Fill, Icons::kFill, "채우기", "채우기 (F)"},
     };
     for (const auto &d : defs) {
-        QToolButton *b = toolButton(d.glyph, QString::fromUtf8(d.label),
-                                    QString("%1 (%2)").arg(QString::fromUtf8(d.label), d.key), true);
+        QToolButton *b = toolButton(d.glyph, QString::fromUtf8(d.label), QString::fromUtf8(d.tip), true);
         m_tools->addButton(b, int(d.tool));
         h->addWidget(b);
     }
@@ -217,11 +242,7 @@ QWidget *EditorWindow::buildToolbar() {
     }
     h->addSpacing(2);
     m_customChip = toolButton(Icons::kPalette, "색상", "다른 색 선택…", false);
-    connect(m_customChip, &QToolButton::clicked, this, [this] {
-        const QColor c = QColorDialog::getColor(m_canvas->color(), this, "색 선택");
-        if (c.isValid())
-            applyColor(c);
-    });
+    connect(m_customChip, &QToolButton::clicked, this, [this] { pickColor(); });
     h->addWidget(m_customChip);
     h->addWidget(makeSep(row));
 
@@ -292,6 +313,12 @@ QWidget *EditorWindow::buildToolbar() {
     return row;
 }
 
+void EditorWindow::pickColor() {
+    const QColor c = QColorDialog::getColor(m_canvas->color(), this, "색 선택");
+    if (c.isValid())
+        applyColor(c);
+}
+
 void EditorWindow::applyColor(const QColor &c) {
     m_canvas->setColor(c);
     m_settings.setValue("edit/color", c.name());
@@ -318,7 +345,7 @@ void EditorWindow::updateActions() {
 
 bool EditorWindow::dirty() const {
     const int rev = m_canvas->revision();
-    return m_canvas->hasItems() && rev != m_savedRev && rev != m_copiedRev;
+    return m_canvas->hasContent() && rev != m_savedRev && rev != m_copiedRev;
 }
 
 void EditorWindow::updateTitle() {

@@ -34,10 +34,11 @@ private:
     QWidget *buildToolbar();
     QToolButton *toolButton(char16_t glyph, const QString &label, const QString &tip, bool checkable);
     void applyColor(const QColor &c);
+    void pickColor();                    // 색 대화상자 (툴바 팔레트 · 우클릭 "색 변경…")
     void updateChips();
     void updateActions();
     void updateTitle();
-    void fitToImage(const QSize &imageSize);
+    void fitToImage(const QSize &imageSize, bool keepPos = false);
     bool dirty() const;
     void copyImage();
     void save();

@@ -1,10 +1,14 @@
 #include "Canvas.h"
 #include "Theme.h"
 
+#include <QAction>
+#include <QContextMenuEvent>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QTimer>
 #include <QWheelEvent>
 #include <QtMath>
 #include <cmath>
@@ -21,6 +25,14 @@ Canvas::Canvas(QWidget *parent) : QWidget(parent) {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setCursor(Qt::CrossCursor);
+
+    // 선택 영역 점선 행진 (Mview 자르기와 같은 60ms 주기)
+    m_marquee = new QTimer(this);
+    m_marquee->setInterval(60);
+    connect(m_marquee, &QTimer::timeout, this, [this] {
+        m_dashPhase += 1.6;
+        update();
+    });
 
     m_edit = new QLineEdit(this);
     m_edit->hide();
@@ -44,6 +56,9 @@ void Canvas::setImage(const QImage &img) {
     m_undo.clear();
     m_redo.clear();
     m_sel = -1;
+    m_hasRegion = m_regionDrag = m_regionMove = false;
+    m_imageEdited = false;
+    syncMarquee();
     m_scaled = QPixmap();
     relayout();
     update();
@@ -92,6 +107,8 @@ void Canvas::setTool(Tool t) {
         commitTextEdit();
     m_tool = t;
     m_drawing = false;
+    if (t != Tool::Region)
+        clearRegion();
     if (t != Tool::Select && t != Tool::Text)
         select(-1);
     updateCursor(toImage(mapFromGlobal(QCursor::pos())));
@@ -132,6 +149,16 @@ void Canvas::setTextPx(int px) {
         placeTextEdit();
 }
 
+// 우클릭 "테두리" — 선택된 텍스트에 적용하고 앞으로 넣을 텍스트의 기본값도 바꾼다
+void Canvas::setTextOutline(bool on) {
+    m_textOutline = on;
+    if (m_sel >= 0 && m_items[m_sel].type == Tool::Text && m_items[m_sel].outline != on) {
+        pushUndo();
+        m_items[m_sel].outline = on;
+        bump();
+    }
+}
+
 // 휠·손잡이에서 온 크기 변경: 항목에 적용하고 툴바 스핀에도 알린다
 void Canvas::applyTextPx(int px) {
     px = qBound(kMinTextPx, px, kMaxTextPx);
@@ -143,11 +170,12 @@ void Canvas::applyTextPx(int px) {
 
 QString Canvas::toolHint() const {
     switch (m_tool) {
-    case Tool::Select: return QStringLiteral("클릭으로 선택 · 드래그로 이동 · 휠/글자 칸/오른쪽 아래 손잡이로 크기 · Delete 삭제 · 텍스트는 더블클릭으로 수정");
+    case Tool::Select: return QStringLiteral("클릭으로 선택 · 드래그로 이동 · 휠/글자 칸/오른쪽 아래 손잡이로 크기 · 우클릭 메뉴 · Delete 삭제 · 텍스트는 더블클릭으로 수정");
+    case Tool::Region: return QStringLiteral("드래그로 영역 선택 (Shift 정사각형) · 안쪽 드래그 = 이동 · 우클릭 = 자르기·채우기·테두리 · Enter 자르기 · Esc 선택 지우기");
     case Tool::Rect: return QStringLiteral("드래그로 사각형 표시");
     case Tool::Line: return QStringLiteral("드래그로 밑줄(선) — 수평·수직에 가까우면 자동으로 맞춰짐, Shift 로 자유 각도");
     case Tool::Arrow: return QStringLiteral("드래그로 화살표 (끝점이 머리)");
-    case Tool::Text: return QStringLiteral("넣을 위치를 클릭 → 입력 → Enter · 크기는 휠, 글자 칸, 오른쪽 아래 손잡이 (Esc 취소)");
+    case Tool::Text: return QStringLiteral("넣을 위치를 클릭 → 입력 → Enter · 크기는 휠, 글자 칸, 오른쪽 아래 손잡이 · 우클릭으로 테두리·색 변경 (Esc 취소)");
     case Tool::Fill: return QStringLiteral("드래그한 영역을 현재 색으로 채움 (가리기용)");
     }
     return QString();
@@ -155,7 +183,7 @@ QString Canvas::toolHint() const {
 
 // ── 되돌리기 ─────────────────────────────────────────────
 void Canvas::pushUndo() {
-    m_undo.append(m_items);
+    m_undo.append(Snapshot{m_items, m_img, m_imageEdited});
     if (m_undo.size() > 100)
         m_undo.removeFirst();
     m_redo.clear();
@@ -174,24 +202,39 @@ void Canvas::undo() {
     }
     if (m_undo.isEmpty())
         return;
-    m_redo.append(m_items);
-    m_items = m_undo.takeLast();
-    select(-1);
-    bump();
+    m_redo.append(Snapshot{m_items, m_img, m_imageEdited});
+    restore(m_undo.takeLast());
 }
 
 void Canvas::redo() {
     if (m_redo.isEmpty())
         return;
-    m_undo.append(m_items);
-    m_items = m_redo.takeLast();
+    m_undo.append(Snapshot{m_items, m_img, m_imageEdited});
+    restore(m_redo.takeLast());
+}
+
+// 되돌리기/다시 실행 공통 — 이미지 크기가 달라졌으면 배율과 창까지 다시 맞춘다
+void Canvas::restore(const Snapshot &s) {
+    const bool sizeChanged = s.img.size() != m_img.size();
+    m_items = s.items;
+    m_img = s.img;
+    m_imageEdited = s.imageEdited;
+    clearRegion();
     select(-1);
+    if (sizeChanged) {
+        m_scaled = QPixmap();
+        relayout();
+    }
     bump();
+    if (sizeChanged)
+        emit imageResized(m_img.size());
 }
 
 void Canvas::deleteSelected() {
-    if (m_sel < 0)
+    if (m_sel < 0) {
+        clearRegion();
         return;
+    }
     pushUndo();
     m_items.removeAt(m_sel);
     select(-1);
@@ -252,6 +295,10 @@ bool Canvas::cancelPending() {
     if (m_drawing) {
         m_drawing = false;
         update();
+        return true;
+    }
+    if (m_hasRegion || m_regionDrag) {
+        clearRegion();
         return true;
     }
     if (m_sel >= 0) {
@@ -323,6 +370,7 @@ void Canvas::commitTextEdit() {
         it.color = m_color;
         it.text = text;
         it.textPx = m_textPx;
+        it.outline = m_textOutline;
         m_items.append(it);
         select(m_items.size() - 1);   // 확정 직후 바로 크기·색을 바꾸거나 옮길 수 있게 선택 상태로
         bump();
@@ -336,6 +384,178 @@ void Canvas::commitTextEdit() {
 void Canvas::finishTextEdit() {
     if (m_edit->isVisible())
         commitTextEdit();
+}
+
+// ── 선택 영역 (Region 도구) ───────────────────────────────
+QRectF Canvas::regionF() const {
+    return QRectF(QPointF(qMin(m_rgA.x(), m_rgB.x()), qMin(m_rgA.y(), m_rgB.y())),
+                  QPointF(qMax(m_rgA.x(), m_rgB.x()), qMax(m_rgA.y(), m_rgB.y())));
+}
+
+QPointF Canvas::clampToImage(const QPointF &p) const {
+    if (m_img.isNull())
+        return p;
+    return QPointF(qBound(0.0, p.x(), qreal(m_img.width())), qBound(0.0, p.y(), qreal(m_img.height())));
+}
+
+// Shift: 정사각형. 현재점은 이미 이미지 안으로 잘라 두므로 짧은 변에 맞추면 밖으로 안 나간다.
+void Canvas::squareRegion() {
+    const qreal dx = m_rgB.x() - m_rgA.x(), dy = m_rgB.y() - m_rgA.y();
+    const qreal side = qMin(qAbs(dx), qAbs(dy));
+    m_rgB = QPointF(m_rgA.x() + (dx >= 0 ? side : -side), m_rgA.y() + (dy >= 0 ? side : -side));
+}
+
+void Canvas::syncMarquee() {
+    const bool on = m_hasRegion || m_regionDrag;
+    if (on && !m_marquee->isActive())
+        m_marquee->start();
+    else if (!on && m_marquee->isActive())
+        m_marquee->stop();
+}
+
+void Canvas::clearRegion() {
+    if (!m_hasRegion && !m_regionDrag && !m_regionMove)
+        return;
+    m_hasRegion = m_regionDrag = m_regionMove = false;
+    syncMarquee();
+    update();
+}
+
+// 선택 영역대로 이미지를 자른다 — 항목은 좌표만 옮겨 그대로 편집할 수 있다 (되돌리기 가능)
+void Canvas::cropToRegion() {
+    if (!m_hasRegion || m_img.isNull())
+        return;
+    finishTextEdit();
+    const QRect r = regionF().toRect().intersected(m_img.rect());
+    if (r.width() < 1 || r.height() < 1)
+        return;
+    pushUndo();
+    QImage cropped = m_img.copy(r);
+    cropped.setDevicePixelRatio(1.0);
+    m_img = cropped;
+    for (Item &it : m_items)
+        it.move(QPointF(-r.x(), -r.y()));
+    m_imageEdited = true;
+    m_hasRegion = m_regionDrag = m_regionMove = false;
+    syncMarquee();
+    select(-1);
+    m_scaled = QPixmap();
+    relayout();
+    bump();
+    emit imageResized(m_img.size());
+}
+
+void Canvas::fillRegion() {
+    if (!m_hasRegion)
+        return;
+    const QRectF r = regionF();
+    if (r.width() < 1 || r.height() < 1)
+        return;
+    pushUndo();
+    Item it;
+    it.type = Tool::Fill;
+    it.p1 = r.topLeft();
+    it.p2 = r.bottomRight();
+    it.color = m_color;
+    m_items.append(it);
+    clearRegion();
+    bump();
+}
+
+void Canvas::borderRegion() {
+    if (!m_hasRegion)
+        return;
+    const QRectF r = regionF();
+    if (r.width() < 1 || r.height() < 1)
+        return;
+    pushUndo();
+    Item it;
+    it.type = Tool::Rect;
+    it.p1 = r.topLeft();
+    it.p2 = r.bottomRight();
+    it.color = m_color;
+    it.width = m_width;
+    m_items.append(it);
+    clearRegion();
+    bump();
+}
+
+// ── 우클릭 메뉴 ───────────────────────────────────────────
+void Canvas::showRegionMenu(const QPoint &globalPos) {
+    QMenu menu(this);
+    // 단축키 표기는 QMenu 의 탭 뒤 칸에 — Mview 자르기 메뉴와 같은 말투
+    QAction *crop = menu.addAction(QStringLiteral("이 영역으로 자르기\tEnter"));
+    menu.addSeparator();
+    QAction *fill = menu.addAction(QStringLiteral("선택 영역 색 채우기"));
+    QAction *border = menu.addAction(QStringLiteral("선택 영역 테두리 추가"));
+    menu.addSeparator();
+    QAction *clear = menu.addAction(QStringLiteral("선택 지우기\tEsc"));
+
+    const QAction *picked = menu.exec(globalPos);
+    if (picked == crop)
+        cropToRegion();
+    else if (picked == fill)
+        fillRegion();
+    else if (picked == border)
+        borderRegion();
+    else if (picked == clear)
+        clearRegion();
+}
+
+void Canvas::showItemMenu(int idx, const QPoint &globalPos) {
+    if (idx < 0 || idx >= m_items.size())
+        return;
+    const bool isText = m_items[idx].type == Tool::Text;
+    const bool hasOutline = m_items[idx].outline;
+    const QPointF anchor = m_items[idx].p1;
+
+    QMenu menu(this);
+    QAction *editText = nullptr, *outline = nullptr;
+    if (isText) {
+        editText = menu.addAction(QStringLiteral("텍스트 수정"));
+        menu.addSeparator();
+        outline = menu.addAction(QStringLiteral("테두리"));
+        outline->setCheckable(true);
+        outline->setChecked(hasOutline);
+    }
+    QAction *color = menu.addAction(QStringLiteral("색 변경…"));
+    menu.addSeparator();
+    QAction *del = menu.addAction(QStringLiteral("삭제\tDelete"));
+
+    const QAction *picked = menu.exec(globalPos);
+    if (!picked)
+        return;
+    if (picked == editText)
+        beginTextEdit(anchor, idx);
+    else if (picked == outline)
+        setTextOutline(!hasOutline);
+    else if (picked == color)
+        emit colorPickRequested();
+    else if (picked == del)
+        deleteSelected();
+}
+
+void Canvas::contextMenuEvent(QContextMenuEvent *e) {
+    if (m_img.isNull()) {
+        e->ignore();
+        return;
+    }
+    if (m_drawing || m_edit->isVisible()) {   // 그리는 중/입력 중이면 우클릭은 취소
+        cancelPending();
+        e->accept();
+        return;
+    }
+    const int idx = hitTest(toImage(e->pos()));
+    if (idx >= 0) {
+        select(idx);
+        showItemMenu(idx, e->globalPos());
+    } else if (m_hasRegion) {
+        showRegionMenu(e->globalPos());
+    } else if (!cancelPending()) {
+        e->ignore();
+        return;
+    }
+    e->accept();
 }
 
 // ── 마우스 ────────────────────────────────────────────────
@@ -353,6 +573,11 @@ void Canvas::snapLine(QPointF &p2, const QPointF &p1, bool free) const {
 void Canvas::updateCursor(const QPointF &imgPos) {
     if (m_resizing || handleRect().contains(toWidget(imgPos))) {
         setCursor(Qt::SizeFDiagCursor);
+    } else if (m_tool == Tool::Region) {
+        if (m_regionMove)
+            setCursor(Qt::ClosedHandCursor);
+        else
+            setCursor(m_hasRegion && regionF().contains(imgPos) ? Qt::SizeAllCursor : Qt::CrossCursor);
     } else if (m_tool == Tool::Select) {
         if (m_moving)
             setCursor(Qt::ClosedHandCursor);
@@ -369,11 +594,8 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
     if (m_img.isNull())
         return;
     const QPointF pos = toImage(e->position());
-    if (e->button() == Qt::RightButton) {
-        if (!cancelPending())
-            e->ignore();
-        return;
-    }
+    if (e->button() == Qt::RightButton)
+        return;   // 메뉴는 contextMenuEvent 에서 — 누를 때 선택/영역을 지우면 안 된다
     if (e->button() != Qt::LeftButton)
         return;
     if (m_edit->isVisible()) {
@@ -394,6 +616,19 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
     }
 
     switch (m_tool) {
+    case Tool::Region: {
+        if (m_hasRegion && regionF().contains(pos)) {   // 안쪽을 잡으면 영역을 통째로 이동
+            m_regionMove = true;
+            m_regionGrab = pos - regionF().topLeft();
+            setCursor(Qt::ClosedHandCursor);
+        } else {
+            m_regionDrag = true;
+            m_hasRegion = false;
+            m_rgA = m_rgB = clampToImage(pos);
+            syncMarquee();
+        }
+        break;
+    }
     case Tool::Select: {
         const int idx = hitTest(pos);
         select(idx);
@@ -437,6 +672,23 @@ void Canvas::mouseMoveEvent(QMouseEvent *e) {
         applyTextPx(px);
         return;
     }
+    if (m_regionDrag) {
+        m_rgB = clampToImage(pos);
+        if (e->modifiers() & Qt::ShiftModifier)
+            squareRegion();
+        update();
+        return;
+    }
+    if (m_regionMove) {
+        const QSizeF sz = regionF().size();
+        QPointF tl = pos - m_regionGrab;
+        tl.setX(qBound(0.0, tl.x(), qMax(0.0, m_img.width() - sz.width())));
+        tl.setY(qBound(0.0, tl.y(), qMax(0.0, m_img.height() - sz.height())));
+        m_rgA = tl;
+        m_rgB = tl + QPointF(sz.width(), sz.height());
+        update();
+        return;
+    }
     if (m_drawing) {
         m_cur.p2 = pos;
         if (m_cur.type == Tool::Line || m_cur.type == Tool::Arrow)
@@ -463,6 +715,20 @@ void Canvas::mouseMoveEvent(QMouseEvent *e) {
 void Canvas::mouseReleaseEvent(QMouseEvent *e) {
     if (e->button() != Qt::LeftButton)
         return;
+    if (m_regionDrag) {
+        m_regionDrag = false;
+        const QRectF r = regionF();
+        m_hasRegion = r.width() >= 1.0 && r.height() >= 1.0;
+        syncMarquee();
+        updateCursor(toImage(e->position()));
+        update();
+        return;
+    }
+    if (m_regionMove) {
+        m_regionMove = false;
+        updateCursor(toImage(e->position()));
+        return;
+    }
     if (m_resizing) {
         m_resizing = false;
         updateCursor(toImage(e->position()));
@@ -531,6 +797,10 @@ void Canvas::wheelEvent(QWheelEvent *e) {
 }
 
 void Canvas::keyPressEvent(QKeyEvent *e) {
+    if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) && m_hasRegion && !m_edit->isVisible()) {
+        cropToRegion();   // Mview 자르기와 같은 키
+        return;
+    }
     if (m_sel >= 0 && !m_edit->isVisible()) {
         QPointF d;
         const qreal step = (e->modifiers() & Qt::ShiftModifier) ? 10 : 1;
@@ -577,6 +847,8 @@ void Canvas::paintEvent(QPaintEvent *) {
         Annot::paint(p, m_cur);
     p.restore();
 
+    paintRegion(p, dst);
+
     if (m_sel >= 0 && m_sel < m_items.size()) {
         const QRectF b = Annot::bounds(m_items[m_sel]);
         const QRectF wb(toWidget(b.topLeft()), toWidget(b.bottomRight()));
@@ -592,4 +864,65 @@ void Canvas::paintEvent(QPaintEvent *) {
             p.drawRect(h);
         }
     }
+}
+
+// 선택 영역 오버레이 — 바깥 딤 + 행진 점선 + 코너 손잡이 + 실시간 크기 (Mview 자르기와 같은 모양)
+void Canvas::paintRegion(QPainter &p, const QRectF &dst) {
+    if (!m_hasRegion && !m_regionDrag)
+        return;
+    const QRectF r = regionF();
+    if (r.width() < 0.5 || r.height() < 0.5)
+        return;
+    const QRectF wr = QRectF(toWidget(r.topLeft()), toWidget(r.bottomRight())).intersected(dst);
+
+    const QColor dim(8, 8, 10, 166);
+    p.fillRect(QRectF(dst.left(), dst.top(), dst.width(), wr.top() - dst.top()), dim);
+    p.fillRect(QRectF(dst.left(), wr.bottom(), dst.width(), dst.bottom() - wr.bottom()), dim);
+    p.fillRect(QRectF(dst.left(), wr.top(), wr.left() - dst.left(), wr.height()), dim);
+    p.fillRect(QRectF(wr.right(), wr.top(), dst.right() - wr.right(), wr.height()), dim);
+
+    p.setBrush(Qt::NoBrush);
+    QPen under(QColor(0, 0, 0, 150), 2.0);
+    under.setCosmetic(true);
+    p.setPen(under);
+    p.drawRect(wr);
+    QPen dash(Qt::white, 1.5);
+    dash.setCosmetic(true);
+    dash.setDashPattern(QList<qreal>{5.0, 5.0});
+    dash.setDashOffset(m_dashPhase);
+    p.setPen(dash);
+    p.drawRect(wr);
+
+    const qreal hs = 10.0;
+    const qreal xs[2] = {wr.left() - hs / 2, wr.right() - hs / 2};
+    const qreal ys[2] = {wr.top() - hs / 2, wr.bottom() - hs / 2};
+    p.setPen(Qt::NoPen);
+    for (qreal x : xs) {
+        for (qreal y : ys) {
+            p.setBrush(QColor(0, 0, 0, 90));
+            p.drawRoundedRect(QRectF(x + 1, y + 2, hs, hs), 2, 2);
+            p.setBrush(Qt::white);
+            p.drawRoundedRect(QRectF(x, y, hs, hs), 2, 2);
+        }
+    }
+
+    const QString label = QString("%1 × %2 px").arg(qRound(r.width())).arg(qRound(r.height()));
+    QFont f = font();
+    f.setPixelSize(12);
+    f.setBold(true);
+    const QFontMetricsF fm(f);
+    const qreal bw = fm.horizontalAdvance(label) + 20, bh = 26;
+    qreal by = wr.bottom() + 8;
+    if (by + bh > height() - 4)
+        by = qMax(4.0, wr.bottom() - bh - 8);
+    const qreal bx = qBound(4.0, wr.right() - bw, qMax(4.0, width() - bw - 4));
+    QPainterPath bp;
+    bp.addRoundedRect(QRectF(bx, by, bw, bh), 8, 8);
+    p.fillPath(bp, QColor(18, 18, 22, 217));
+    p.setPen(QPen(QColor(255, 255, 255, 31), 1));
+    p.setBrush(Qt::NoBrush);
+    p.drawPath(bp);
+    p.setFont(f);
+    p.setPen(QColor(0xf0, 0xf0, 0xf2));
+    p.drawText(QRectF(bx, by, bw, bh), Qt::AlignCenter, label);
 }
