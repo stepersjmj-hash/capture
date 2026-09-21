@@ -186,7 +186,7 @@ open build-mac/Mcapture.app
 
 ## 현재 상태
 
-- **v1.1.2** (2026-09-21 구현) — macOS 로그인 시 자동 실행(LaunchAgent plist). 설정 대화상자의 자동 실행 체크박스를
+- **v1.1.2** (2026-09-21 구현·**릴리스** — GitHub Release v1.1.2: 로컬 `bash release-mac.sh` 로 dmg·zip 교체 + NAS `version-mac.txt`, CI win zip 을 NAS 에 복사 + `version.txt`) — macOS 로그인 시 자동 실행(LaunchAgent plist). 설정 대화상자의 자동 실행 체크박스를
   양 플랫폼에 두고 라벨만 다르게. Mac 실검증: `startup/run=true` 로 실행하면 plist 생성(plutil 정상), false 면 삭제.
   재부팅 후 실제로 뜨는지·로그인 항목 목록 표시는 사용자 확인 대기.
 
