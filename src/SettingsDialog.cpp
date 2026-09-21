@@ -80,11 +80,13 @@ SettingsDialog::SettingsDialog(QSettings &settings, QWidget *parent) : QDialog(p
     auto *gen = new QGroupBox("일반", this);
     auto *gv = new QVBoxLayout(gen);
     gv->setSpacing(8);
-#ifdef Q_OS_WIN
+#ifdef Q_OS_MACOS
+    m_autoStart = new QCheckBox("로그인 시 자동 실행 (메뉴 막대에 상주)", gen);
+#else
     m_autoStart = new QCheckBox("Windows 시작 시 자동 실행 (트레이에 상주)", gen);
+#endif
     m_autoStart->setChecked(m_s.value("startup/run", false).toBool());
     gv->addWidget(m_autoStart);
-#endif
     m_autoUpdate = new QCheckBox("시작할 때 새 버전 확인 (제작자 NAS 에서 읽기만 함 — 보내는 데이터 없음)", gen);
     m_autoUpdate->setChecked(m_s.value("update/auto", true).toBool());
     gv->addWidget(m_autoUpdate);

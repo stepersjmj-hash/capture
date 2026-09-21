@@ -25,7 +25,8 @@ src/SettingsDialog.*  설정 대화상자 (QSettings 에 쓰기만; 적용은 Ap
 src/Updater.*         NAS 자동 업데이트 (mplayer 에서 이식, 이름만 변경)
 src/Theme.h / Icons.h 디자인 토큰(Mview 차콜+앰버) QSS / Material Icons 글리프 → QIcon
 src/Keys.h            단축키 표기 도우미 — 코드는 "Ctrl+Z", 화면은 플랫폼 표기(Win "Ctrl+Z" / mac "⌘Z", Del/⌫)
-src/Platform.h/.mm    macOS 전용 네이티브 (pasteboard changeCount, 오버레이 창 레벨, Carbon 단축키) — Win 빌드 제외
+src/Platform.h/.mm    macOS 전용 네이티브 (pasteboard changeCount, 오버레이 창 레벨, Carbon 단축키, 물리 키 → Qt::Key,
+                      LaunchAgent 로그인 항목) — Win 빌드 제외
 assets/               app.svg(아이콘 마스터) → app.ico/app.icns(생성물, 추적됨), fonts/(Material Icons Outlined)
 scripts/test/         UI 자동 검증용 PowerShell (winshot·mouse·keys·winmove — 아래 "화면 검증")
 scripts/test/mac/     macOS 검증용 (input.swift CGEvent 키·드래그, is.swift 입력 소스 — 아래 "macOS 검증")
@@ -178,9 +179,16 @@ open build-mac/Mcapture.app
 - **macOS 는 이 PC 에서 컴파일 불가** — `Platform.mm`(Carbon 단축키·NSPasteboard changeCount·오버레이
   `NSScreenSaverWindowLevel`), `LSUIElement`(Dock 숨김), 화면 기록 권한 흐름은 CI 컴파일만 거쳤고 실기기
   검증 대기. Qt 는 mac 에서 Ctrl↔Cmd 를 맞바꾸므로 기본 단축키 문자열은 `Meta+Shift+Ctrl+S` (= ⌃⇧⌘S).
-- Windows 자동 실행은 `HKCU\…\Run` 의 `Mcapture` 값 (설정 적용 때 쓰거나 지움).
+- 자동 실행: Windows 는 `HKCU\…\Run` 의 `Mcapture` 값, macOS 는 `~/Library/LaunchAgents/com.stepersjmj.mcapture.plist`
+  (`Platform::setLoginItem` — RunAtLoad, ProgramArguments = 번들 실행 파일 경로; 켜져 있으면 시작 때마다 applySettings 가
+  경로가 바뀌었는지 보고 다시 쓴다. **끌 때 `launchctl bootout` 은 하지 않는다** — 에이전트로 뜬 앱이면 자기가 꺼진다).
+  둘 다 설정 키 `startup/run`, 설정 적용(`App::applySettings`) 때 쓰거나 지운다.
 
 ## 현재 상태
+
+- **v1.1.2** (2026-09-21 구현) — macOS 로그인 시 자동 실행(LaunchAgent plist). 설정 대화상자의 자동 실행 체크박스를
+  양 플랫폼에 두고 라벨만 다르게. Mac 실검증: `startup/run=true` 로 실행하면 plist 생성(plutil 정상), false 면 삭제.
+  재부팅 후 실제로 뜨는지·로그인 항목 목록 표시는 사용자 확인 대기.
 
 - **v1.1.1** (2026-09-21 구현·**릴리스** — GitHub Release v1.1.1 에 CI 가 win zip·mac dmg·mac zip 첨부, 이 Mac 에서 CI zip 을 받아 NAS `version.txt`/`version-mac.txt` 갱신. Windows 에서 release.ps1 없이 mac 만으로 릴리스한 첫 사례) — mac 피드백 "단축키가 적용 안 됨": 전역 단축키·오버레이·편집 창
   활성화는 정상이었고, 원인은 **한글 입력 소스에서 도구 글자 키(C/M/U/T/F)가 자모로 와서 무반응** + 툴팁·

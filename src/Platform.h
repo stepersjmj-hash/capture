@@ -19,6 +19,10 @@ void installHotKeyHandler(void (*callback)(int id));
 // 가상 키코드(물리 키, 미국 배열 기준) → Qt::Key. 한글 등 라틴이 아닌 입력 소스에서는 키 이벤트의
 // key() 가 자모로 오므로, 글자 단축키는 이걸로 한 번 더 본다. 모르는 키면 0.
 int keyForVirtualKey(quint32 vk);
+// 로그인 시 자동 실행 — ~/Library/LaunchAgents/com.stepersjmj.mcapture.plist (RunAtLoad) 쓰기/지우기.
+// 켜져 있으면 실행 파일 경로가 바뀌었을 때(앱을 옮긴 경우) plist 를 다시 쓴다.
+bool loginItemEnabled();
+void setLoginItem(bool on);
 #endif
 
 } // namespace Platform

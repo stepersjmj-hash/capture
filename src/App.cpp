@@ -6,6 +6,7 @@
 #include "HotKey.h"
 #include "Icons.h"
 #include "Log.h"
+#include "Platform.h"
 #include "SettingsDialog.h"
 #include "Updater.h"
 
@@ -139,6 +140,8 @@ void App::applySettings(bool interactive) {
         else
             run.remove("Mcapture");
     }
+#elif defined(Q_OS_MACOS)
+    Platform::setLoginItem(m_settings.value("startup/run", false).toBool());
 #endif
     refreshMenu();
 

@@ -88,6 +88,40 @@ int keyForVirtualKey(quint32 vk) {
     return 0;
 }
 
+// ── 로그인 항목 (LaunchAgent) ─────────────────────────────
+static NSString *loginItemPlistPath() {
+    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/LaunchAgents/com.stepersjmj.mcapture.plist"];
+}
+
+bool loginItemEnabled() {
+    return [[NSFileManager defaultManager] fileExistsAtPath:loginItemPlistPath()];
+}
+
+void setLoginItem(bool on) {
+    NSString *path = loginItemPlistPath();
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (!on) {
+        [fm removeItemAtPath:path error:nil];   // 실행 중인 에이전트는 건드리지 않는다 (bootout 하면 앱이 꺼진다)
+        return;
+    }
+    NSString *exe = [[NSBundle mainBundle] executablePath];
+    NSDictionary *plist = @{
+        @"Label" : @"com.stepersjmj.mcapture",
+        @"ProgramArguments" : @[ exe ],
+        @"RunAtLoad" : @YES,
+        @"ProcessType" : @"Interactive",
+    };
+    // 이미 같은 내용이면 다시 쓰지 않는다 (로그인 항목 알림이 매번 뜨지 않게)
+    NSDictionary *cur = [NSDictionary dictionaryWithContentsOfFile:path];
+    if (cur && [cur isEqualToDictionary:plist])
+        return;
+    [fm createDirectoryAtPath:[path stringByDeletingLastPathComponent]
+        withIntermediateDirectories:YES
+                         attributes:nil
+                              error:nil];
+    [plist writeToFile:path atomically:YES];
+}
+
 static void (*s_callback)(int) = nullptr;
 static EventHandlerRef s_handler = nullptr;
 
