@@ -37,13 +37,16 @@ make-dist.ps1 / make-dist-mac.sh / release.ps1 / release-mac.sh / .github/workfl
 키: `hotkey/region` `hotkey/full`(PortableText) `clipboard/watch` `capture/autoCopy` `save/dir` `startup/run`
 `update/auto` `update/url` `edit/color|width|textPx` `app/firstRunShown`.
 
-## 빌드 (Windows / MSYS2 MINGW64)
+## 빌드 (Windows / MSYS2 UCRT64)
 
 ```powershell
-$env:MSYSTEM = "MINGW64"
+$env:MSYSTEM = "UCRT64"
 C:\msys64\usr\bin\bash.exe -lc "cd /c/Users/stepe/Desktop/mj/capture && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build -j"
 ```
-- 필요 패키지: `mingw-w64-x86_64-{gcc,cmake,ninja,qt6-base,qt6-svg}` (Qt 6.11 로 검증). 제너레이터는 Ninja.
+- 필요 패키지: `mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,qt6-base,qt6-svg}` (Qt 6.11 로 검증). 제너레이터는 Ninja.
+- **MINGW64 는 쓰지 말 것** (2026-09-29 UCRT64 로 이전): MSYS2 가 MINGW64 를 폐기 중이다 (Mplayer 는 mpv 패키지가
+  빠져 CI 가 죽었다). 환경을 바꿀 때는 `build/` 를 새로 만든다 — CMake 캐시의 컴파일러 경로와 이전 환경
+  DLL 이 섞이면 make-dist 가 배포본까지 오염시킨다. 예전 폴더는 `build-mingw64/`(gitignore)로 보관.
 - 실행 중인 Mcapture.exe 가 있으면 링크 실패 → `Stop-Process -Name Mcapture` 먼저.
 - 아이콘: `build/Mcapture.exe --export-ico assets/app.svg assets/app.ico` (icns 도 같은 식) 후 **재구성**
   (`cmake -B build …` 다시 — app.rc 포함 여부를 configure 때 결정). 이미 생성돼 추적 중이므로 SVG 를
@@ -54,8 +57,8 @@ C:\msys64\usr\bin\bash.exe -lc "cd /c/Users/stepe/Desktop/mj/capture && cmake -B
 
 ```bash
 windeployqt6 --release --no-translations build/Mcapture.exe
-for dll in $(ldd build/Mcapture.exe | grep -i mingw64 | awk '{print $3}' | sort -u); do [ -e build/$(basename $dll) ] || cp $dll build/; done
-mkdir -p build/tls && cp /mingw64/share/qt6/plugins/tls/qschannelbackend.dll build/tls/
+for dll in $(ldd build/Mcapture.exe | grep -i ucrt64 | awk '{print $3}' | sort -u); do [ -e build/$(basename $dll) ] || cp $dll build/; done
+mkdir -p build/tls && cp /ucrt64/share/qt6/plugins/tls/qschannelbackend.dll build/tls/
 ```
 **함정: tls 플러그인** — windeployqt 가 넣어 주지 않아 없으면 HTTPS(자동 업데이트)가 조용히 실패한다.
 make-dist.ps1 은 없으면 오류를 낸다.

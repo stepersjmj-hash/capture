@@ -3,3 +3,4 @@ build-mac*/
 dist/
 *.ini
 .DS_Store
+build-mingw64/

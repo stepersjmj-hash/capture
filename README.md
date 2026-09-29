@@ -85,7 +85,7 @@ Mcapture --quit            종료
 
 ## 빌드
 
-- **Windows** (MSYS2 MINGW64): `pacman -S mingw-w64-x86_64-{gcc,cmake,ninja,qt6-base,qt6-svg}` 후
+- **Windows** (MSYS2 UCRT64): `pacman -S mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,qt6-base,qt6-svg}` 후
   `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`, 실행에 필요한 DLL 은
   `windeployqt6 build/Mcapture.exe` + `tls/qschannelbackend.dll` (자세한 절차는 CLAUDE.md), 배포는 `make-dist.ps1`.
 - **macOS**: `brew install cmake ninja qt` 후 `./make-dist-mac.sh` → `dist/Mcapture-<버전>-mac.dmg`.

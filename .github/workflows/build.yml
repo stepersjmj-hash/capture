@@ -1,4 +1,5 @@
-# Mcapture 자동 빌드 (Windows MSYS2 MINGW64 + macOS Apple Silicon)
+# Mcapture 자동 빌드 (Windows MSYS2 UCRT64 + macOS Apple Silicon)
+#   ※ 2026-09 MSYS2 가 MINGW64 를 폐기 중이라 (Mplayer 는 mpv 패키지가 빠져 CI 가 죽었다) UCRT64 로 옮겼다
 # - main 푸시: Windows 빌드 검증만 (산출물 artifact 1일 보관)
 #   macOS 잡은 태그·수동 실행에서만 돈다 — macOS 러너는 분당 요금이 Linux 의 10배라
 #   무료 2,000분(Linux 기준) 한도를 macOS 혼자 거의 다 먹었다 (2026-09 실측)
@@ -37,15 +38,15 @@ jobs:
       # 의존성은 전부 MSYS2 바이너리 패키지 (Qt 만) — 소스 빌드·캐시 불필요
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: false
           install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-qt6-base
-            mingw-w64-x86_64-qt6-svg
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-svg
 
       - name: 버전 읽기
         id: ver
@@ -71,13 +72,13 @@ jobs:
           windeployqt6 --release --no-translations build/Mcapture.exe
           # cp -n 은 coreutils 9.2+ 에서 건너뛸 때 exit 1 이라 (windeployqt 가 먼저 넣은 Qt DLL) 직접 검사
           for exe in Mcapture.exe; do
-            for dll in $(ldd "build/$exe" | grep -i mingw64 | awk '{print $3}' | sort -u); do
+            for dll in $(ldd "build/$exe" | grep -i ucrt64 | awk '{print $3}' | sort -u); do
               [ -e "build/$(basename "$dll")" ] || cp "$dll" build/
             done
           done
           # windeployqt 는 tls 백엔드를 빼놓는다 — 없으면 HTTPS(자동 업데이트)가 조용히 실패
           mkdir -p build/tls
-          cp /mingw64/share/qt6/plugins/tls/qschannelbackend.dll build/tls/
+          cp /ucrt64/share/qt6/plugins/tls/qschannelbackend.dll build/tls/
           ls build/*.exe build/tls
 
       - name: dist zip (make-dist.ps1)
