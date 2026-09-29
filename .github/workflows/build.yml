@@ -1,5 +1,8 @@
 # Mcapture 자동 빌드 (Windows MSYS2 MINGW64 + macOS Apple Silicon)
-# - main 푸시: 양 플랫폼 빌드 검증 + 산출물 artifact 업로드
+# - main 푸시: Windows 빌드 검증만 (산출물 artifact 1일 보관)
+#   macOS 잡은 태그·수동 실행에서만 돈다 — macOS 러너는 분당 요금이 Linux 의 10배라
+#   무료 2,000분(Linux 기준) 한도를 macOS 혼자 거의 다 먹었다 (2026-09 실측)
+#   문서(*.md)만 바꾼 커밋은 빌드를 아예 돌리지 않는다 (paths-ignore)
 # - v* 태그 푸시: 각 잡이 빌드 직후 GitHub Release 에 win zip / mac dmg / mac zip 을 직접 첨부
 #   (artifact 를 거치지 않는다 — 계정 Actions 저장 쿼터가 차면 릴리스까지 막혔다)
 #   (NAS 업로드(자동 업데이트 배포)는 로컬 release.ps1 / release-mac.sh 가 담당)
@@ -9,6 +12,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # 문서·기록만 바꾼 푸시는 빌드 불필요 (태그 푸시에는 적용되지 않음)
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
   workflow_dispatch:
 
 concurrency:
@@ -109,6 +116,9 @@ jobs:
           gh release upload $tag $zip.FullName --clobber
 
   macos:
+    # macOS 러너(10배 요금)는 태그 릴리스와 수동 실행에서만 — main 푸시 검증은 Windows 잡으로 충분
+    # (release.ps1 은 태그 실행(--branch v*)만 기다리므로 영향 없음)
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest   # Apple Silicon 러너 — Homebrew Qt 가 arm64 단일 아키텍처라 유니버설 불가
     env:
       HOMEBREW_NO_AUTO_UPDATE: 1
