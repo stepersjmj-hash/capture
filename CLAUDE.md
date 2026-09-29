@@ -46,7 +46,7 @@ C:\msys64\usr\bin\bash.exe -lc "cd /c/Users/stepe/Desktop/mj/capture && cmake -B
 - 필요 패키지: `mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,qt6-base,qt6-svg}` (Qt 6.11 로 검증). 제너레이터는 Ninja.
 - **MINGW64 는 쓰지 말 것** (2026-09-29 UCRT64 로 이전): MSYS2 가 MINGW64 를 폐기 중이다 (Mplayer 는 mpv 패키지가
   빠져 CI 가 죽었다). 환경을 바꿀 때는 `build/` 를 새로 만든다 — CMake 캐시의 컴파일러 경로와 이전 환경
-  DLL 이 섞이면 make-dist 가 배포본까지 오염시킨다. 예전 폴더는 `build-mingw64/`(gitignore)로 보관.
+  DLL 이 섞이면 make-dist 가 배포본까지 오염시킨다.
 - 실행 중인 Mcapture.exe 가 있으면 링크 실패 → `Stop-Process -Name Mcapture` 먼저.
 - 아이콘: `build/Mcapture.exe --export-ico assets/app.svg assets/app.ico` (icns 도 같은 식) 후 **재구성**
   (`cmake -B build …` 다시 — app.rc 포함 여부를 configure 때 결정). 이미 생성돼 추적 중이므로 SVG 를
